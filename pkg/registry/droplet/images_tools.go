@@ -56,6 +56,7 @@ func (i *ImagesTool) listImages(ctx context.Context, req mcp.CallToolRequest) (*
 		filteredImages[idx] = map[string]any{
 			"id":           image.ID,
 			"name":         image.Name,
+			"slug":         image.Slug,
 			"distribution": image.Distribution,
 			"type":         image.Type,
 		}
