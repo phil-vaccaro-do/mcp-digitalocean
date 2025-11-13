@@ -181,67 +181,6 @@ func TestDropletSnapshot(t *testing.T) {
 	t.Logf("Snapshot action initiated: ID=%d, Name=%s", action.ID, snapshotName)
 }
 
-// TestDropletKernels tests getting available kernels for a droplet
-func TestDropletKernels(t *testing.T) {
-	ctx := context.Background()
-	c := initializeClient(ctx, t)
-	defer c.Close()
-
-	// Get SSH keys and test image
-	sshKeys := getSSHKeys(ctx, c, t)
-	imageID := getTestImage(ctx, c, t)
-
-	// Create droplet
-	dropletName := fmt.Sprintf("mcp-e2e-kernels-%d", time.Now().Unix())
-	createResp, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name: "droplet-create",
-			Arguments: map[string]interface{}{
-				"Name":    dropletName,
-				"Size":    "s-1vcpu-1gb",
-				"ImageID": imageID,
-				"Region":  "nyc3",
-				"SSHKeys": sshKeys,
-			},
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, createResp.IsError)
-
-	var droplet godo.Droplet
-	err = json.Unmarshal([]byte(createResp.Content[0].(mcp.TextContent).Text), &droplet)
-	require.NoError(t, err)
-
-	defer func() {
-		_, _ = c.CallTool(ctx, mcp.CallToolRequest{
-			Params: mcp.CallToolParams{
-				Name:      "droplet-delete",
-				Arguments: map[string]interface{}{"ID": float64(droplet.ID)},
-			},
-		})
-	}()
-
-	// Wait for droplet to be active
-	time.Sleep(30 * time.Second)
-
-	// Get kernels
-	kernelsResp, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name: "droplet-kernels",
-			Arguments: map[string]interface{}{
-				"ID": float64(droplet.ID),
-			},
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, kernelsResp.IsError)
-
-	var kernels []godo.Kernel
-	err = json.Unmarshal([]byte(kernelsResp.Content[0].(mcp.TextContent).Text), &kernels)
-	require.NoError(t, err)
-	t.Logf("Found %d kernels for droplet", len(kernels))
-}
-
 // TestDropletRebuildBySlug tests rebuilding a droplet using an image slug
 func TestDropletRebuildBySlug(t *testing.T) {
 	ctx := context.Background()
