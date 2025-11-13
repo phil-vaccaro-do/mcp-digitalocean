@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/digitalocean/godo"
-	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 )
@@ -124,11 +123,10 @@ func TestDropletSnapshot(t *testing.T) {
 	c := initializeClient(ctx, t)
 	defer c.Close()
 
-	// Get SSH keys for droplet creation
+	// Get SSH keys and test image
 	sshKeys := getSSHKeys(ctx, c, t)
-
-	// Get a suitable test image (Ubuntu LTS)
 	imageID := getTestImage(ctx, c, t)
+
 	// Create droplet
 	dropletName := fmt.Sprintf("mcp-e2e-snapshot-%d", time.Now().Unix())
 	createResp, err := c.CallTool(ctx, mcp.CallToolRequest{
@@ -189,11 +187,10 @@ func TestDropletKernels(t *testing.T) {
 	c := initializeClient(ctx, t)
 	defer c.Close()
 
-	// Get SSH keys for droplet creation
+	// Get SSH keys and test image
 	sshKeys := getSSHKeys(ctx, c, t)
-
-	// Get a suitable test image (Ubuntu LTS)
 	imageID := getTestImage(ctx, c, t)
+
 	// Create droplet
 	dropletName := fmt.Sprintf("mcp-e2e-kernels-%d", time.Now().Unix())
 	createResp, err := c.CallTool(ctx, mcp.CallToolRequest{
@@ -354,11 +351,10 @@ func TestDropletRestore(t *testing.T) {
 	c := initializeClient(ctx, t)
 	defer c.Close()
 
-	// Get SSH keys for droplet creation
+	// Get SSH keys and test image
 	sshKeys := getSSHKeys(ctx, c, t)
-
-	// Get a suitable test image (Ubuntu LTS)
 	imageID := getTestImage(ctx, c, t)
+
 	// Create droplet
 	dropletName := fmt.Sprintf("mcp-e2e-restore-%d", time.Now().Unix())
 	createResp, err := c.CallTool(ctx, mcp.CallToolRequest{
@@ -450,101 +446,4 @@ func TestDropletRestore(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, restoreAction.ID)
 	t.Logf("Restore action initiated: ID=%d, ImageID=%v", restoreAction.ID, snapshotImageID)
-}
-
-// getSSHKeys retrieves SSH key IDs from the account for use in droplet creation
-func getSSHKeys(ctx context.Context, c *client.Client, t *testing.T) []interface{} {
-	resp, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name:      "key-list",
-			Arguments: map[string]interface{}{},
-		},
-	})
-	require.NoError(t, err)
-
-	// If there's an error or no keys, return empty array
-	if resp.IsError || len(resp.Content) == 0 {
-		t.Log("No SSH keys found in account - tests may fail if images require SSH keys")
-		return []interface{}{}
-	}
-
-	var keys []map[string]interface{}
-	keysJSON := resp.Content[0].(mcp.TextContent).Text
-	err = json.Unmarshal([]byte(keysJSON), &keys)
-	if err != nil {
-		t.Logf("Failed to parse SSH keys: %v", err)
-		return []interface{}{}
-	}
-
-	if len(keys) == 0 {
-		t.Log("No SSH keys found in account - tests may fail if images require SSH keys")
-		return []interface{}{}
-	}
-
-	// Return array of SSH key IDs
-	sshKeys := make([]interface{}, 0, len(keys))
-	for _, key := range keys {
-		if id, ok := key["id"].(float64); ok {
-			sshKeys = append(sshKeys, id)
-		}
-	}
-
-	return sshKeys
-}
-
-// getTestImage retrieves a suitable image for E2E testing.
-func getTestImage(ctx context.Context, c *client.Client, t *testing.T) float64 {
-	resp, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name: "image-list",
-			Arguments: map[string]interface{}{
-				"Page":    1,
-				"PerPage": 100, // Get more images to find a good one
-			},
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, resp.IsError, "Failed to list images")
-
-	var images []map[string]interface{}
-	imagesJSON := resp.Content[0].(mcp.TextContent).Text
-	err = json.Unmarshal([]byte(imagesJSON), &images)
-	require.NoError(t, err)
-	require.NotEmpty(t, images, "No images available for testing")
-
-	// Look for "ubuntu-22-04-x64" or "ubuntu-20-04-x64"
-	for _, img := range images {
-		if name, ok := img["name"].(string); ok {
-			// Match Ubuntu 22.04 or 20.04 LTS
-			if name == "22.04 (LTS) x64" || name == "20.04 (LTS) x64" {
-				if id, ok := img["id"].(float64); ok {
-					t.Logf("Using test image: %s (ID: %.0f)", name, id)
-					return id
-				}
-			}
-		}
-	}
-
-	// Fallback to first Ubuntu image
-	for _, img := range images {
-		if dist, ok := img["distribution"].(string); ok && dist == "Ubuntu" {
-			if id, ok := img["id"].(float64); ok {
-				if name, ok := img["name"].(string); ok {
-					t.Logf("Using fallback Ubuntu image: %s (ID: %.0f)", name, id)
-				}
-				return id
-			}
-		}
-	}
-
-	// Last resort: use first available image
-	if id, ok := images[0]["id"].(float64); ok {
-		if name, ok := images[0]["name"].(string); ok {
-			t.Logf("Using first available image: %s (ID: %.0f)", name, id)
-		}
-		return id
-	}
-
-	t.Fatal("Could not find any suitable image for testing")
-	return 0
 }
