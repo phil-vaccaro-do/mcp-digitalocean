@@ -48,9 +48,7 @@ const (
 	pollInterval   = 5 * time.Second
 )
 
-// callToolJSON centralizes calling an MCP tool and unmarshalling its text content into out.
-// It asserts on network/errors to keep existing test style and returns the raw response for callers
-// who still want to inspect it.
+// callToolJSON calls an MCP tool and unmarshals its text content into out.
 func callToolJSON(ctx context.Context, c *client.Client, t *testing.T, name string, args map[string]interface{}, out interface{}) *mcp.CallToolResult {
 	resp, err := c.CallTool(ctx, mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
@@ -85,6 +83,35 @@ func callToolJSON(ctx context.Context, c *client.Client, t *testing.T, name stri
 	return resp
 }
 
+// callToolUnmarshal calls an MCP tool and unmarshals its text content into a typed value.
+func callToolUnmarshal[T any](ctx context.Context, c *client.Client, t *testing.T, name string, args map[string]interface{}) (T, *mcp.CallToolResult, error) {
+	var zero T
+	resp, err := c.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name:      name,
+			Arguments: args,
+		},
+	})
+	if err != nil {
+		return zero, resp, err
+	}
+	if resp.IsError {
+		return zero, resp, fmt.Errorf("%s returned error: %+v", name, resp)
+	}
+	if len(resp.Content) == 0 {
+		return zero, resp, fmt.Errorf("%s returned empty content", name)
+	}
+	tc, ok := resp.Content[0].(mcp.TextContent)
+	if !ok {
+		return zero, resp, fmt.Errorf("%s returned unexpected content type", name)
+	}
+	var v T
+	if err := json.Unmarshal([]byte(tc.Text), &v); err != nil {
+		return zero, resp, err
+	}
+	return v, resp, nil
+}
+
 // deferCleanupDroplet returns a closure suitable for deferring droplet cleanup in tests.
 func deferCleanupDroplet(ctx context.Context, c *client.Client, t *testing.T, dropletID int) func() {
 	return func() {
@@ -95,21 +122,7 @@ func deferCleanupDroplet(ctx context.Context, c *client.Client, t *testing.T, dr
 }
 
 func getSSHKeys(ctx context.Context, c *client.Client, t *testing.T) []interface{} {
-	resp, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name:      "key-list",
-			Arguments: map[string]interface{}{},
-		},
-	})
-	require.NoError(t, err)
-	if resp.IsError {
-		t.Logf("SSH key list error response: %+v", resp.Content)
-	}
-	require.False(t, resp.IsError, "Failed to list SSH keys")
-
-	var keys []map[string]interface{}
-	keysJSON := resp.Content[0].(mcp.TextContent).Text
-	err = json.Unmarshal([]byte(keysJSON), &keys)
+	keys, _, err := callToolUnmarshal[[]map[string]interface{}](ctx, c, t, "key-list", map[string]interface{}{})
 	require.NoError(t, err)
 	require.NotEmpty(t, keys, "No SSH keys found in account. Please add at least one SSH key.")
 
@@ -126,20 +139,7 @@ func getSSHKeys(ctx context.Context, c *client.Client, t *testing.T) []interface
 }
 
 func getTestImage(ctx context.Context, c *client.Client, t *testing.T) float64 {
-	imagesResp, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name: "image-list",
-			Arguments: map[string]interface{}{
-				"Type": "distribution",
-			},
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, imagesResp.IsError, "Failed to list images")
-
-	var images []map[string]interface{}
-	imagesJSON := imagesResp.Content[0].(mcp.TextContent).Text
-	err = json.Unmarshal([]byte(imagesJSON), &images)
+	images, _, err := callToolUnmarshal[[]map[string]interface{}](ctx, c, t, "image-list", map[string]interface{}{"Type": "distribution"})
 	require.NoError(t, err)
 	require.NotEmpty(t, images, "No images found")
 
@@ -251,63 +251,16 @@ func CreateTestDroplet(ctx context.Context, c *client.Client, t *testing.T, name
 }
 
 func WaitForDropletActive(ctx context.Context, c *client.Client, t *testing.T, dropletID int, timeout time.Duration) godo.Droplet {
-	deadline := time.Now().Add(timeout)
-	var lastStatus string
-
-	for time.Now().Before(deadline) {
-		resp, err := c.CallTool(ctx, mcp.CallToolRequest{
-			Params: mcp.CallToolParams{
-				Name: "droplet-get",
-				Arguments: map[string]interface{}{
-					"ID": float64(dropletID),
-				},
-			},
-		})
+	poll := func() (godo.Droplet, string, error) {
+		d, _, err := callToolUnmarshal[godo.Droplet](ctx, c, t, "droplet-get", map[string]interface{}{"ID": float64(dropletID)})
 		if err != nil {
-			t.Logf("droplet-get error for %d: %v", dropletID, err)
-			time.Sleep(5 * time.Second)
-			continue
+			return godo.Droplet{}, "", err
 		}
-		if resp.IsError {
-			if len(resp.Content) > 0 {
-				t.Logf("droplet-get returned error for %d: %+v", dropletID, resp.Content)
-			} else {
-				t.Logf("droplet-get returned error for %d: %+v", dropletID, resp)
-			}
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		if len(resp.Content) == 0 {
-			t.Logf("droplet-get returned empty content for %d; retrying", dropletID)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		var d godo.Droplet
-		if err := json.Unmarshal([]byte(resp.Content[0].(mcp.TextContent).Text), &d); err != nil {
-			t.Logf("failed to unmarshal droplet-get response for %d: %v", dropletID, err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		if d.Status != lastStatus {
-			if lastStatus == "" {
-				t.Logf("droplet %d initial status: %s", dropletID, d.Status)
-			} else {
-				t.Logf("droplet %d status changed: %s -> %s", dropletID, lastStatus, d.Status)
-			}
-			lastStatus = d.Status
-		}
-
-		if d.Status == "active" {
-			return d
-		}
-
-		time.Sleep(5 * time.Second)
+		return d, d.Status, nil
 	}
 
-	t.Fatalf("timed out waiting for droplet %d to become active after %s", dropletID, timeout)
-	return godo.Droplet{}
+	done := func(d godo.Droplet, status string) bool { return status == "active" }
+	return WaitForResult(ctx, t, poll, done, timeout)
 }
 
 func WaitForDropletActiveDefault(ctx context.Context, c *client.Client, t *testing.T, dropletID int) godo.Droplet {
@@ -358,77 +311,57 @@ func deferCleanupImage(ctx context.Context, c *client.Client, t *testing.T, imag
 }
 
 func ListResources(ctx context.Context, c *client.Client, t *testing.T, resourceType, context string, page, perPage int) []map[string]interface{} {
-	resp, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name:      fmt.Sprintf("%s-list", resourceType),
-			Arguments: map[string]interface{}{"Page": page, "PerPage": perPage},
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, resp.IsError)
 	var resources []map[string]interface{}
-	resourcesJSON := resp.Content[0].(mcp.TextContent).Text
-	err = json.Unmarshal([]byte(resourcesJSON), &resources)
+	name := fmt.Sprintf("%s-list", resourceType)
+	v, _, err := callToolUnmarshal[[]map[string]interface{}](ctx, c, t, name, map[string]interface{}{"Page": page, "PerPage": perPage})
 	require.NoError(t, err)
+	resources = v
 	return resources
 }
 
 func WaitForActionComplete(ctx context.Context, c *client.Client, t *testing.T, actionID int, timeout time.Duration) godo.Action {
+	poll := func() (godo.Action, string, error) {
+		a, _, err := callToolUnmarshal[godo.Action](ctx, c, t, "action-get", map[string]interface{}{"ID": float64(actionID)})
+		if err != nil {
+			return godo.Action{}, "", err
+		}
+		return a, a.Status, nil
+	}
+
+	done := func(a godo.Action, status string) bool { return status == "completed" }
+	return WaitForResult(ctx, t, poll, done, timeout)
+}
+
+// WaitForResult is a generic polling helper used by resource-specific wait functions.
+func WaitForResult[T any](ctx context.Context, t *testing.T, poll func() (T, string, error), done func(T, string) bool, timeout time.Duration) T {
+	var zero T
 	deadline := time.Now().Add(timeout)
 	var lastStatus string
 
 	for time.Now().Before(deadline) {
-		resp, err := c.CallTool(ctx, mcp.CallToolRequest{
-			Params: mcp.CallToolParams{
-				Name: "action-get",
-				Arguments: map[string]interface{}{
-					"ID": float64(actionID),
-				},
-			},
-		})
+		val, status, err := poll()
 		if err != nil {
-			t.Logf("action-get error for %d: %v", actionID, err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		if resp.IsError {
-			if len(resp.Content) > 0 {
-				t.Logf("action-get returned error for %d: %+v", actionID, resp.Content)
-			} else {
-				t.Logf("action-get returned error for %d: %+v", actionID, resp)
-			}
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		if len(resp.Content) == 0 {
-			t.Logf("action-get returned empty content for %d; retrying", actionID)
-			time.Sleep(5 * time.Second)
+			t.Logf("poll error: %v", err)
+			time.Sleep(pollInterval)
 			continue
 		}
 
-		var action godo.Action
-		if err := json.Unmarshal([]byte(resp.Content[0].(mcp.TextContent).Text), &action); err != nil {
-			t.Logf("failed to unmarshal action-get response for %d: %v", actionID, err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		if action.Status != lastStatus {
+		if status != lastStatus {
 			if lastStatus == "" {
-				t.Logf("action %d initial status: %s", actionID, action.Status)
+				t.Logf("initial status: %s", status)
 			} else {
-				t.Logf("action %d status changed: %s -> %s", actionID, lastStatus, action.Status)
+				t.Logf("status changed: %s -> %s", lastStatus, status)
 			}
-			lastStatus = action.Status
+			lastStatus = status
 		}
 
-		if action.Status == "completed" {
-			return action
+		if done(val, status) {
+			return val
 		}
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(pollInterval)
 	}
 
-	t.Fatalf("timed out waiting for action %d to complete after %s", actionID, timeout)
-	return godo.Action{}
+	t.Fatalf("timed out waiting for condition after %s", timeout)
+	return zero
 }
