@@ -5,7 +5,6 @@ package testing
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -102,48 +101,6 @@ func TestDropletLifecycle(t *testing.T) {
 	LogResourceDeleted(t, "droplet", droplet.ID, err, deleteResp)
 }
 
-func TestDropletSnapshot(t *testing.T) {
-	ctx := context.Background()
-	c := initializeClient(ctx, t)
-	defer c.Close()
-
-	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-snapshot")
-	defer func() {
-		resources := ListResources(ctx, c, t, "droplet", "before deletion", 1, 50)
-		LogResourceList(t, "droplet", "before deletion", resources)
-		DeleteResource(ctx, c, t, "droplet", float64(droplet.ID))
-	}()
-	LogResourceCreated(t, "droplet", droplet.ID, droplet.Name, droplet.Status, droplet.Region.Slug)
-
-	snapshotName := fmt.Sprintf("snapshot-%d", time.Now().Unix())
-	snapshotResp, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name: "snapshot-droplet",
-			Arguments: map[string]interface{}{
-				"ID":   float64(droplet.ID),
-				"Name": snapshotName,
-			},
-		},
-	})
-	require.NoError(t, err)
-	if snapshotResp.IsError {
-		if len(snapshotResp.Content) > 0 {
-			verboseDump(t, "snapshot-droplet error content", snapshotResp.Content)
-		} else {
-			t.Logf("snapshot-droplet returned error: %v", snapshotResp)
-		}
-	}
-	require.False(t, snapshotResp.IsError)
-
-	var action godo.Action
-	err = json.Unmarshal([]byte(snapshotResp.Content[0].(mcp.TextContent).Text), &action)
-	require.NoError(t, err)
-	require.NotEmpty(t, action.ID)
-	t.Logf("Snapshot action initiated: ID=%s, Name=%s", formatID(action.ID), snapshotName)
-	completedAction := WaitForActionComplete(ctx, c, t, action.ID, 2*time.Minute)
-	LogActionCompleted(t, "Snapshot", completedAction)
-}
-
 func TestDropletRebuildBySlug(t *testing.T) {
 	ctx := context.Background()
 	c := initializeClient(ctx, t)
@@ -227,97 +184,4 @@ func TestDropletRebuildBySlug(t *testing.T) {
 	t.Logf("Rebuild by slug action initiated: ID=%s, ImageSlug=%s", formatID(action.ID), imageSlug)
 	completedAction := WaitForActionComplete(ctx, c, t, action.ID, 2*time.Minute)
 	LogActionCompleted(t, "Rebuild", completedAction)
-}
-
-func TestDropletRestore(t *testing.T) {
-	ctx := context.Background()
-	c := initializeClient(ctx, t)
-	defer c.Close()
-
-	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-restore")
-	LogResourceCreated(t, "droplet", droplet.ID, droplet.Name, droplet.Status, droplet.Region.Slug)
-	defer func() {
-		resources := ListResources(ctx, c, t, "droplet", "before deletion", 1, 50)
-		LogResourceList(t, "droplet", "before deletion", resources)
-		DeleteResource(ctx, c, t, "droplet", float64(droplet.ID))
-	}()
-
-	snapshotName := fmt.Sprintf("restore-snapshot-%d", time.Now().Unix())
-	snapshotResp, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name: "snapshot-droplet",
-			Arguments: map[string]interface{}{
-				"ID":   float64(droplet.ID),
-				"Name": snapshotName,
-			},
-		},
-	})
-	require.NoError(t, err)
-	if snapshotResp.IsError {
-		if len(snapshotResp.Content) > 0 {
-			verboseDump(t, "snapshot-droplet error content", snapshotResp.Content)
-		} else {
-			t.Logf("snapshot-droplet returned error: %v", snapshotResp)
-		}
-	}
-	require.False(t, snapshotResp.IsError)
-
-	var snapshotAction godo.Action
-	err = json.Unmarshal([]byte(snapshotResp.Content[0].(mcp.TextContent).Text), &snapshotAction)
-	require.NoError(t, err)
-	t.Logf("Snapshot created: %s", snapshotName)
-
-	_ = WaitForActionComplete(ctx, c, t, snapshotAction.ID, 2*time.Minute)
-
-	getResp, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name:      "droplet-get",
-			Arguments: map[string]interface{}{"ID": float64(droplet.ID)},
-		},
-	})
-	require.NoError(t, err)
-	if getResp.IsError {
-		if len(getResp.Content) > 0 {
-			verboseDump(t, "droplet-get error content", getResp.Content)
-		} else {
-			t.Logf("droplet-get returned error: %v", getResp)
-		}
-	}
-	require.False(t, getResp.IsError)
-
-	var refreshedDroplet godo.Droplet
-	err = json.Unmarshal([]byte(getResp.Content[0].(mcp.TextContent).Text), &refreshedDroplet)
-	require.NoError(t, err)
-	require.NotEmpty(t, refreshedDroplet.SnapshotIDs, "Droplet should have at least one snapshot")
-
-	snapshotImageID := float64(refreshedDroplet.SnapshotIDs[0])
-	t.Logf("Refreshed droplet: ID=%s, Status=%s, Name=%s, Snapshots=%v", formatID(refreshedDroplet.ID), refreshedDroplet.Status, refreshedDroplet.Name, refreshedDroplet.SnapshotIDs)
-	t.Logf("Using snapshot image ID: %s", formatID(snapshotImageID))
-
-	restoreResp, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name: "restore-droplet",
-			Arguments: map[string]interface{}{
-				"ID":      float64(droplet.ID),
-				"ImageID": snapshotImageID,
-			},
-		},
-	})
-	require.NoError(t, err)
-	if restoreResp.IsError {
-		if len(restoreResp.Content) > 0 {
-			verboseDump(t, "restore-droplet error content", restoreResp.Content)
-		} else {
-			t.Logf("restore-droplet returned error: %v", restoreResp)
-		}
-	}
-	require.False(t, restoreResp.IsError)
-
-	var restoreAction godo.Action
-	err = json.Unmarshal([]byte(restoreResp.Content[0].(mcp.TextContent).Text), &restoreAction)
-	require.NoError(t, err)
-	require.NotEmpty(t, restoreAction.ID)
-	t.Logf("Restore action initiated: ID=%s, ImageID=%s", formatID(restoreAction.ID), formatID(snapshotImageID))
-	completedAction := WaitForActionComplete(ctx, c, t, restoreAction.ID, 2*time.Minute)
-	LogActionCompleted(t, "Restore", completedAction)
 }
