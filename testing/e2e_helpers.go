@@ -16,6 +16,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func verboseDump(t *testing.T, prefix string, v interface{}) {
+	if os.Getenv("E2E_VERBOSE") == "true" {
+		t.Logf("%s: %+v", prefix, v)
+	} else {
+		t.Logf("%s: (suppressed). Set E2E_VERBOSE=true for details", prefix)
+	}
+}
+
 func formatID(id interface{}) string {
 	switch v := id.(type) {
 	case float64:
@@ -32,6 +40,57 @@ func formatID(id interface{}) string {
 		return v
 	default:
 		return fmt.Sprintf("%v", v)
+	}
+}
+
+const (
+	defaultTimeout = 2 * time.Minute
+	pollInterval   = 5 * time.Second
+)
+
+// callToolJSON centralizes calling an MCP tool and unmarshalling its text content into out.
+// It asserts on network/errors to keep existing test style and returns the raw response for callers
+// who still want to inspect it.
+func callToolJSON(ctx context.Context, c *client.Client, t *testing.T, name string, args map[string]interface{}, out interface{}) *mcp.CallToolResult {
+	resp, err := c.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name:      name,
+			Arguments: args,
+		},
+	})
+	require.NoError(t, err)
+
+	// Provide helpful logging on error responses, then assert to fail the test consistently.
+	if resp.IsError {
+		if len(resp.Content) > 0 {
+			if tc, ok := resp.Content[0].(mcp.TextContent); ok {
+				t.Logf("%s error text: %s", name, tc.Text)
+			} else {
+				verboseDump(t, name+" error content", resp.Content)
+				t.Logf("%s raw content: %+v", name, resp.Content)
+			}
+		} else {
+			t.Logf("%s returned error: %v", name, resp)
+		}
+		require.False(t, resp.IsError, "%s returned error", name)
+	}
+
+	require.NotEmpty(t, resp.Content, "%s returned empty content", name)
+
+	tc, ok := resp.Content[0].(mcp.TextContent)
+	require.True(t, ok, "unexpected content type for %s", name)
+
+	data := tc.Text
+	require.NoError(t, json.Unmarshal([]byte(data), out), "failed to unmarshal %s response", name)
+	return resp
+}
+
+// deferCleanupDroplet returns a closure suitable for deferring droplet cleanup in tests.
+func deferCleanupDroplet(ctx context.Context, c *client.Client, t *testing.T, dropletID int) func() {
+	return func() {
+		resources := ListResources(ctx, c, t, "droplet", "before deletion", 1, 50)
+		LogResourceList(t, "droplet", "before deletion", resources)
+		DeleteResource(ctx, c, t, "droplet", float64(dropletID))
 	}
 }
 
@@ -284,11 +343,18 @@ func DeleteResource(ctx context.Context, c *client.Client, t *testing.T, resourc
 	resp, err := c.CallTool(ctx, mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Name:      fmt.Sprintf("%s-delete", resourceType),
-			Arguments: map[string]interface{}{"ID": id},
+			Arguments: map[string]interface{}{"ID": id, "ImageID": id},
 		},
 	})
 	LogResourceDeleted(t, resourceType, id, err, resp)
 	return resp
+}
+
+func deferCleanupImage(ctx context.Context, c *client.Client, t *testing.T, imageID float64) func() {
+	return func() {
+		// Use existing DeleteResource which maps to the "<resource>-delete" tool (snapshot-delete)
+		DeleteResource(ctx, c, t, "snapshot", imageID)
+	}
 }
 
 func ListResources(ctx context.Context, c *client.Client, t *testing.T, resourceType, context string, page, perPage int) []map[string]interface{} {
