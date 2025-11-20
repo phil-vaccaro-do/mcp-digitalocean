@@ -830,8 +830,6 @@ func TestDropletActionsTool_powerOffDroplet(t *testing.T) {
 	}
 }
 
-// --- New tests for backup policy actions ---
-
 func TestDropletActionsTool_enableBackupsWithPolicy(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

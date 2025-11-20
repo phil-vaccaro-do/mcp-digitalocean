@@ -801,13 +801,11 @@ func TestDropletTool_getDroplets(t *testing.T) {
 			require.NoError(t, json.Unmarshal([]byte(resp.Content[0].(mcp.TextContent).Text), &outDroplets))
 			require.Len(t, outDroplets, 1)
 			out := outDroplets[0]
-			// Check that all expected fields are present
 			for _, field := range []string{
 				"id", "name", "memory", "vcpus", "disk", "region", "image", "size", "size_slug", "backup_ids", "next_backup_window", "snapshot_ids", "features", "locked", "status", "networks", "created_at", "kernel", "tags", "volume_ids", "vpc_uuid",
 			} {
 				require.Contains(t, out, field)
 			}
-			// Spot check a few values
 			require.Equal(t, float64(testDroplet.ID), out["id"])
 			require.Equal(t, testDroplet.Name, out["name"])
 			require.Equal(t, testDroplet.SizeSlug, out["size_slug"])
@@ -1189,7 +1187,6 @@ func TestDropletTool_listBackupPolicies(t *testing.T) {
 
 			var out map[string]any
 			require.NoError(t, json.Unmarshal([]byte(resp.Content[0].(mcp.TextContent).Text), &out))
-			// Ensure map contains the expected key as string
 			require.Contains(t, out, "123")
 		})
 	}
@@ -1252,8 +1249,6 @@ func TestDropletTool_listSupportedBackupPolicies(t *testing.T) {
 		})
 	}
 }
-
-// New tests: ensure droplet create and create-multiple support enhanced fields (Step 5)
 
 func TestDropletTool_createDroplet_with_extra_fields(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -1353,9 +1348,65 @@ func TestDropletTool_createMultipleDroplets_with_extra_fields(t *testing.T) {
 	require.NotNil(t, resp)
 	require.False(t, resp.IsError)
 
-	// response contains formatted summaries
 	var out []map[string]any
 	require.NoError(t, json.Unmarshal([]byte(resp.Content[0].(mcp.TextContent).Text), &out))
 	require.Len(t, out, 1)
 	require.Equal(t, float64(testDroplet.ID), out[0]["id"])
+}
+
+func TestDropletTool_listAssociatedResourcesForDeletion(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	testResources := &godo.DropletAssociatedResources{}
+
+	mockSetup := func(m *MockDropletsService) {
+		m.EXPECT().
+			ListAssociatedResourcesForDeletion(gomock.Any(), 123).
+			Return(testResources, nil, nil).
+			Times(1)
+	}
+
+	t.Run("successful list associated resources", func(t *testing.T) {
+		mockDroplets := NewMockDropletsService(ctrl)
+		mockActions := NewMockDropletActionsService(ctrl)
+		mockSetup(mockDroplets)
+
+		tool := setupDropletToolWithMocks(mockDroplets, mockActions)
+		req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"ID": float64(123)}}}
+		resp, err := tool.listAssociatedResourcesForDeletion(context.Background(), req)
+
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.False(t, resp.IsError)
+
+		var out godo.DropletAssociatedResources
+		require.NoError(t, json.Unmarshal([]byte(resp.Content[0].(mcp.TextContent).Text), &out))
+	})
+
+	t.Run("missing ID argument", func(t *testing.T) {
+		mockDroplets := NewMockDropletsService(ctrl)
+		mockActions := NewMockDropletActionsService(ctrl)
+		tool := setupDropletToolWithMocks(mockDroplets, mockActions)
+		req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{}}}
+		resp, _ := tool.listAssociatedResourcesForDeletion(context.Background(), req)
+		require.NotNil(t, resp)
+		require.True(t, resp.IsError)
+	})
+
+	t.Run("api error", func(t *testing.T) {
+		mockDroplets := NewMockDropletsService(ctrl)
+		mockActions := NewMockDropletActionsService(ctrl)
+		mockDroplets.EXPECT().
+			ListAssociatedResourcesForDeletion(gomock.Any(), 456).
+			Return(nil, nil, errors.New("api error")).Times(1)
+
+		tool := setupDropletToolWithMocks(mockDroplets, mockActions)
+		req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"ID": float64(456)}}}
+		resp, err := tool.listAssociatedResourcesForDeletion(context.Background(), req)
+		require.NotNil(t, resp)
+		require.True(t, resp.IsError)
+		require.NoError(t, err)
+	})
+
 }

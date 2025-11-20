@@ -734,6 +734,31 @@ func (d *DropletTool) listSupportedBackupPolicies(ctx context.Context, req mcp.C
 	return mcp.NewToolResultText(string(jsonData)), nil
 }
 
+// listAssociatedResourcesForDeletion lists resources associated with a droplet that would be removed when deleting the droplet.
+func (d *DropletTool) listAssociatedResourcesForDeletion(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	dropletID, ok := req.GetArguments()["ID"].(float64)
+	if !ok {
+		return mcp.NewToolResultError("Droplet ID is required"), nil
+	}
+
+	client, err := d.client(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get DigitalOcean client: %w", err)
+	}
+
+	resources, _, err := client.Droplets.ListAssociatedResourcesForDeletion(ctx, int(dropletID))
+	if err != nil {
+		return mcp.NewToolResultErrorFromErr("api error", err), nil
+	}
+
+	jsonData, err := json.MarshalIndent(resources, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal error: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
 func (d *DropletTool) Tools() []server.ServerTool {
 	tools := []server.ServerTool{
 		{
@@ -876,6 +901,13 @@ func (d *DropletTool) Tools() []server.ServerTool {
 				mcp.WithNumber("ID", mcp.Required(), mcp.Description("Droplet ID")),
 				mcp.WithNumber("Page", mcp.DefaultNumber(1), mcp.Description("Page number")),
 				mcp.WithNumber("PerPage", mcp.DefaultNumber(50), mcp.Description("Items per page")),
+			),
+		},
+		{
+			Handler: d.listAssociatedResourcesForDeletion,
+			Tool: mcp.NewTool("droplet-associated-resources",
+				mcp.WithDescription("List resources associated with a droplet that would be deleted if the droplet is removed."),
+				mcp.WithNumber("ID", mcp.Required(), mcp.Description("Droplet ID")),
 			),
 		},
 		{

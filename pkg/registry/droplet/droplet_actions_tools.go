@@ -862,7 +862,6 @@ func (da *DropletActionsTool) Tools() []server.ServerTool {
 				mcp.WithString("Name", mcp.Required(), mcp.Description("Name for the snapshot")),
 			),
 		},
-		// New backup policy action tools
 		{
 			Handler: da.enableBackupsWithPolicy,
 			Tool: mcp.NewTool("droplet-enable-backups-with-policy",
