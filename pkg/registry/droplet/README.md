@@ -34,6 +34,69 @@ This directory contains tools for managing DigitalOcean Droplets, Images, and Si
   - `Page` (number, default: 1): Page number  
   - `PerPage` (number, default: 50): Items per page
 
+- **droplet-list-gpus**  
+  List only droplets that have GPUs attached. Supports pagination.  
+  **Arguments:**  
+  - `Page` (number, default: 1): Page number  
+  - `PerPage` (number, default: 50): Items per page
+
+- **droplet-list-by-name**  
+  List droplets that match an exact name (case-insensitive). Supports pagination.  
+  **Arguments:**  
+  - `Name` (string, required): Droplet name to match  
+  - `Page` (number, default: 1): Page number  
+  - `PerPage` (number, default: 50): Items per page
+
+- **droplet-list-by-tag**  
+  List droplets that share a specific tag. Supports pagination.  
+  **Arguments:**  
+  - `Tag` (string, required): Tag to filter on  
+  - `Page` (number, default: 1): Page number  
+  - `PerPage` (number, default: 50): Items per page
+
+- **droplet-create-multiple**  
+  Create multiple droplets with the same configuration in a single call.  
+  **Arguments:**  
+  - `Names` (array of strings, required): Droplet names  
+  - `Size` (string, required): Droplet size slug  
+  - `ImageID` (number, required): Image ID to use  
+  - `Region` (string, required): Region slug  
+  - `Backup` (boolean, optional): Enable backups  
+  - `Monitoring` (boolean, optional): Enable monitoring  
+  - `SSHKeys` (array, optional): SSH key IDs or fingerprints  
+  - `Tags` (array, optional): Tags to apply
+
+- **droplet-delete-by-tag**  
+  Delete every droplet associated with a tag.  
+  **Arguments:**  
+  - `Tag` (string, required): Tag whose droplets should be deleted
+
+- **droplet-snapshots**  
+  List snapshots for a specific droplet. Supports pagination.  
+  **Arguments:**  
+  - `ID` (number, required): Droplet ID  
+  - `Page` (number, default: 1): Page number  
+  - `PerPage` (number, default: 50): Items per page
+
+- **droplet-backups**  
+  List backups for a specific droplet. Supports pagination.  
+  **Arguments:**  
+  - `ID` (number, required): Droplet ID  
+  - `Page` (number, default: 1): Page number  
+  - `PerPage` (number, default: 50): Items per page
+
+- **droplet-actions-list**  
+  List all actions for a specific droplet. Supports pagination.  
+  **Arguments:**  
+  - `ID` (number, required): Droplet ID  
+  - `Page` (number, default: 1): Page number  
+  - `PerPage` (number, default: 50): Items per page
+
+- **droplet-backup-policy-get**  
+  Get the backup policy for a specific droplet.  
+  **Arguments:**  
+  - `ID` (number, required): Droplet ID
+
 ---
 
 ### Droplet Actions Tools
@@ -96,6 +159,11 @@ This directory contains tools for managing DigitalOcean Droplets, Images, and Si
 - **disable-backups-droplet**  
   Enable/disable features on a Droplet.  
   **Arguments:**
+  - `ID` (number, required): Droplet ID
+
+- **droplet-neighbors**  
+  List droplets that share the same physical host as the specified droplet.  
+  **Arguments:**  
   - `ID` (number, required): Droplet ID
 
 #### Tag-based Bulk Actions

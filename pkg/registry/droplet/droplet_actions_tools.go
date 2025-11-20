@@ -559,6 +559,74 @@ func (da *DropletActionsTool) disableBackups(ctx context.Context, req mcp.CallTo
 	return mcp.NewToolResultText(string(jsonAction)), nil
 }
 
+// EnableBackupsWithPolicy enables backups on a droplet using a structured policy request.
+// Expects:
+// - "ID" (number) droplet id
+// - "PolicyJSON" (string) JSON encoded godo.DropletBackupPolicyRequest
+func (da *DropletActionsTool) enableBackupsWithPolicy(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	dropletID := req.GetArguments()["ID"].(float64)
+	policyJSON, ok := req.GetArguments()["PolicyJSON"].(string)
+	if !ok || policyJSON == "" {
+		return mcp.NewToolResultError("PolicyJSON is required (JSON string)"), nil
+	}
+
+	var policyReq godo.DropletBackupPolicyRequest
+	if err := json.Unmarshal([]byte(policyJSON), &policyReq); err != nil {
+		return mcp.NewToolResultErrorFromErr("invalid policy json", err), nil
+	}
+
+	client, err := da.client(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get DigitalOcean client: %w", err)
+	}
+
+	action, _, err := client.DropletActions.EnableBackupsWithPolicy(ctx, int(dropletID), &policyReq)
+	if err != nil {
+		return mcp.NewToolResultErrorFromErr("api error", err), nil
+	}
+
+	jsonAction, err := json.MarshalIndent(action, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal error: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonAction)), nil
+}
+
+// ChangeBackupPolicy changes a droplet's backup policy using a structured policy request.
+// Expects:
+// - "ID" (number) droplet id
+// - "PolicyJSON" (string) JSON encoded godo.DropletBackupPolicyRequest
+func (da *DropletActionsTool) changeBackupPolicy(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	dropletID := req.GetArguments()["ID"].(float64)
+	policyJSON, ok := req.GetArguments()["PolicyJSON"].(string)
+	if !ok || policyJSON == "" {
+		return mcp.NewToolResultError("PolicyJSON is required (JSON string)"), nil
+	}
+
+	var policyReq godo.DropletBackupPolicyRequest
+	if err := json.Unmarshal([]byte(policyJSON), &policyReq); err != nil {
+		return mcp.NewToolResultErrorFromErr("invalid policy json", err), nil
+	}
+
+	client, err := da.client(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get DigitalOcean client: %w", err)
+	}
+
+	action, _, err := client.DropletActions.ChangeBackupPolicy(ctx, int(dropletID), &policyReq)
+	if err != nil {
+		return mcp.NewToolResultErrorFromErr("api error", err), nil
+	}
+
+	jsonAction, err := json.MarshalIndent(action, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal error: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonAction)), nil
+}
+
 // snapshotDroplet creates a snapshot of a droplet
 func (da *DropletActionsTool) snapshotDroplet(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	dropletID := req.GetArguments()["ID"].(float64)
@@ -570,6 +638,31 @@ func (da *DropletActionsTool) snapshotDroplet(ctx context.Context, req mcp.CallT
 	}
 
 	action, _, err := client.DropletActions.Snapshot(ctx, int(dropletID), name)
+	if err != nil {
+		return mcp.NewToolResultErrorFromErr("api error", err), nil
+	}
+
+	jsonAction, err := json.MarshalIndent(action, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal error: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonAction)), nil
+}
+
+// getActionByURI retrieves an action by its resource URI
+func (da *DropletActionsTool) getActionByURI(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	uri, ok := req.GetArguments()["URI"].(string)
+	if !ok || uri == "" {
+		return mcp.NewToolResultError("URI is required"), nil
+	}
+
+	client, err := da.client(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get DigitalOcean client: %w", err)
+	}
+
+	action, _, err := client.DropletActions.GetByURI(ctx, uri)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("api error", err), nil
 	}
@@ -767,6 +860,30 @@ func (da *DropletActionsTool) Tools() []server.ServerTool {
 				mcp.WithDescription("Take a snapshot of a droplet"),
 				mcp.WithNumber("ID", mcp.Required(), mcp.Description("ID of the droplet")),
 				mcp.WithString("Name", mcp.Required(), mcp.Description("Name for the snapshot")),
+			),
+		},
+		// New backup policy action tools
+		{
+			Handler: da.enableBackupsWithPolicy,
+			Tool: mcp.NewTool("droplet-enable-backups-with-policy",
+				mcp.WithDescription("Enable backups on a droplet with a structured backup policy (JSON)"),
+				mcp.WithNumber("ID", mcp.Required(), mcp.Description("ID of the droplet")),
+				mcp.WithString("PolicyJSON", mcp.Required(), mcp.Description("JSON encoded DropletBackupPolicyRequest")),
+			),
+		},
+		{
+			Handler: da.changeBackupPolicy,
+			Tool: mcp.NewTool("droplet-change-backup-policy",
+				mcp.WithDescription("Change a droplet's backup policy (JSON)"),
+				mcp.WithNumber("ID", mcp.Required(), mcp.Description("ID of the droplet")),
+				mcp.WithString("PolicyJSON", mcp.Required(), mcp.Description("JSON encoded DropletBackupPolicyRequest")),
+			),
+		},
+		{
+			Handler: da.getActionByURI,
+			Tool: mcp.NewTool("droplet-action-by-uri",
+				mcp.WithDescription("Get a droplet action by its resource URI"),
+				mcp.WithString("URI", mcp.Required(), mcp.Description("Resource URI of the action")),
 			),
 		},
 	}
