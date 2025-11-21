@@ -130,7 +130,6 @@ func TestDropletEnableBackups(t *testing.T) {
 	t.Logf("Backups Verified for Droplet %d", refreshed.ID)
 }
 
-// TestDropletActionTool explicitly verifies the "droplet-action" tool.
 func TestDropletActionTool(t *testing.T) {
 	ctx, c, gclient, teardown := setupTest(t)
 	defer teardown()
@@ -138,11 +137,9 @@ func TestDropletActionTool(t *testing.T) {
 	d := CreateTestDroplet(ctx, c, t, "mcp-e2e-action-tool")
 	defer deferCleanupDroplet(ctx, c, t, d.ID)()
 
-	// Trigger an action (Power Cycle) to get a valid Action ID
 	cycleAction := callTool[godo.Action](ctx, c, t, "power-cycle-droplet", map[string]interface{}{"ID": d.ID})
 	require.NotZero(t, cycleAction.ID)
 
-	// Verify the 'droplet-action' tool retrieves it correctly
 	fetchedAction := callTool[godo.Action](ctx, c, t, "droplet-action", map[string]interface{}{
 		"DropletID": float64(d.ID),
 		"ActionID":  float64(cycleAction.ID),
@@ -155,5 +152,6 @@ func TestDropletActionTool(t *testing.T) {
 
 	final, err := testhelpers.WaitForAction(ctx, gclient, d.ID, cycleAction.ID, 2*time.Second, 2*time.Minute)
 	require.NoError(t, err)
-	LogActionCompleted(t, "ActionToolTest", *final)
+
+	LogActionStatus(t, "ActionToolTest", *final)
 }

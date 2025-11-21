@@ -33,11 +33,14 @@ func triggerActionAndWait(t *testing.T, ctx context.Context, c *client.Client, g
 	action := callTool[godo.Action](ctx, c, t, tool, args)
 	require.NotZero(t, action.ID, "Action ID should not be zero")
 
-	t.Logf("Action %s initiated (ID: %d)", tool, action.ID)
+	// Log 1: Initial State (usually "in-progress")
+	LogActionStatus(t, tool, action)
 
 	final, err := testhelpers.WaitForAction(ctx, gclient, resourceID, action.ID, 2*time.Second, 2*time.Minute)
 	require.NoError(t, err, "Action failed to complete")
-	LogActionCompleted(t, tool, *final)
+
+	// Log 2: Final State (usually "completed")
+	LogActionStatus(t, tool, *final)
 }
 
 // callTool calls an MCP tool and returns the unmarshaled result T.
@@ -91,11 +94,12 @@ func CreateTestDroplet(ctx context.Context, c *client.Client, t *testing.T, name
 		"SSHKeys":    sshKeys,
 	})
 
+	// Log 1: Initial State
 	LogResourceCreated(t, "droplet", droplet.ID, droplet.Name, droplet.Status, region)
 
 	activeDroplet := WaitForDropletActive(ctx, c, t, droplet.ID, 2*time.Minute)
 
-	// Log confirmation of active state
+	// Log 2: Confirmation of Active state
 	LogResourceCreated(t, "droplet", activeDroplet.ID, activeDroplet.Name, activeDroplet.Status, activeDroplet.Region.Slug)
 
 	return activeDroplet
@@ -175,16 +179,15 @@ func WaitForDropletActive(ctx context.Context, _ *client.Client, t *testing.T, d
 	return *d
 }
 
-// WaitForActionComplete verifies the action via the tool, then waits via API.
 func WaitForActionComplete(ctx context.Context, c *client.Client, t *testing.T, dropletID int, actionID int, timeout time.Duration) godo.Action {
 	gclient := testhelpers.MustGodoClient()
 
-	// Verify the 'droplet-action' tool works for this action
+	// Verify tool works
 	act := callTool[godo.Action](ctx, c, t, "droplet-action", map[string]interface{}{
 		"DropletID": float64(dropletID),
 		"ActionID":  float64(actionID),
 	})
-	require.Equal(t, actionID, act.ID, "Tool returned incorrect Action ID")
+	require.Equal(t, actionID, act.ID)
 
 	final, err := testhelpers.WaitForAction(ctx, gclient, dropletID, actionID, 2*time.Second, timeout)
 	require.NoError(t, err, "WaitForActionComplete failed")
@@ -219,8 +222,9 @@ func LogResourceDeleted(t *testing.T, resourceType string, id interface{}, err e
 	}
 }
 
-func LogActionCompleted(t *testing.T, context string, action godo.Action) {
-	t.Logf("[Action] %s Completed: ID=%d, Type=%s, Status=%s", context, action.ID, action.Type, action.Status)
+// LogActionStatus logs the action state (e.g. in-progress or completed).
+func LogActionStatus(t *testing.T, context string, action godo.Action) {
+	t.Logf("[Action] %s: ID=%d, Type=%s, Status=%s", context, action.ID, action.Type, action.Status)
 }
 
 func formatID(id interface{}) string {

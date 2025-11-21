@@ -16,10 +16,8 @@ func TestDropletLifecycle(t *testing.T) {
 	ctx, c, gclient, teardown := setupTest(t)
 	defer teardown()
 
-	// 1. Create (Logs "new" and "active" automatically)
 	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-test")
 
-	// 2. List & Verify
 	type dropletShort struct {
 		ID int `json:"id"`
 	}
@@ -34,10 +32,8 @@ func TestDropletLifecycle(t *testing.T) {
 	}
 	require.True(t, found, "Created droplet not found in list")
 
-	// 3. Delete
 	DeleteResource(ctx, c, t, "droplet", droplet.ID)
 
-	// 4. Confirm Deletion (Direct API)
 	err := testhelpers.WaitForDropletDeleted(ctx, gclient, droplet.ID, 3*time.Second, 2*time.Minute)
 	if err != nil {
 		t.Logf("Warning: direct WaitForDropletDeleted failed: %v", err)
@@ -53,19 +49,19 @@ func TestDropletSnapshot(t *testing.T) {
 	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-snapshot")
 	defer deferCleanupDroplet(ctx, c, t, droplet.ID)()
 
-	// 1. Trigger Snapshot
 	snapshotName := fmt.Sprintf("snapshot-%d", time.Now().Unix())
 	action := callTool[godo.Action](ctx, c, t, "snapshot-droplet", map[string]interface{}{
 		"ID":   droplet.ID,
 		"Name": snapshotName,
 	})
 
-	t.Logf("Snapshot initiated: %s", snapshotName)
+	// Log 1: Initial
+	LogActionStatus(t, "Snapshot", action)
 
-	// 2. Wait
-	WaitForActionComplete(ctx, c, t, droplet.ID, action.ID, 2*time.Minute)
+	// Log 2: Final (returned by WaitForActionComplete)
+	completed := WaitForActionComplete(ctx, c, t, droplet.ID, action.ID, 2*time.Minute)
+	LogActionStatus(t, "Snapshot", completed)
 
-	// 3. Verify Snapshot Exists
 	d, err := testhelpers.WaitForDroplet(ctx, gclient, droplet.ID, func(d *godo.Droplet) bool {
 		return d != nil && len(d.SnapshotIDs) > 0
 	}, 3*time.Second, 2*time.Minute)
@@ -81,7 +77,6 @@ func TestDropletRebuildBySlug(t *testing.T) {
 	ctx, c, _, teardown := setupTest(t)
 	defer teardown()
 
-	// 1. Find Ubuntu Image Slug
 	type imageShort struct {
 		ID   int    `json:"id"`
 		Slug string `json:"slug"`
@@ -102,19 +97,20 @@ func TestDropletRebuildBySlug(t *testing.T) {
 		t.Skip("No suitable image slug found")
 	}
 
-	// 2. Create Droplet
 	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-rebuild")
 	defer deferCleanupDroplet(ctx, c, t, droplet.ID)()
 
-	// 3. Rebuild
 	action := callTool[godo.Action](ctx, c, t, "rebuild-droplet-by-slug", map[string]interface{}{
 		"ID":        droplet.ID,
 		"ImageSlug": imageSlug,
 	})
-	t.Logf("Rebuild initiated with slug: %s", imageSlug)
 
-	WaitForActionComplete(ctx, c, t, droplet.ID, action.ID, 5*time.Minute)
-	LogActionCompleted(t, "Rebuild", action)
+	// Log 1: Initial
+	LogActionStatus(t, "Rebuild", action)
+
+	// Log 2: Final
+	completed := WaitForActionComplete(ctx, c, t, droplet.ID, action.ID, 5*time.Minute)
+	LogActionStatus(t, "Rebuild", completed)
 }
 
 func TestDropletRestore(t *testing.T) {
@@ -124,7 +120,7 @@ func TestDropletRestore(t *testing.T) {
 	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-restore")
 	defer deferCleanupDroplet(ctx, c, t, droplet.ID)()
 
-	// 1. Create Snapshot
+	// Create Snapshot
 	snapName := fmt.Sprintf("restore-snap-%d", time.Now().Unix())
 	snapAction := callTool[godo.Action](ctx, c, t, "snapshot-droplet", map[string]interface{}{
 		"ID":   droplet.ID,
@@ -132,7 +128,6 @@ func TestDropletRestore(t *testing.T) {
 	})
 	WaitForActionComplete(ctx, c, t, droplet.ID, snapAction.ID, 2*time.Minute)
 
-	// 2. Get Snapshot ID from Droplet
 	refreshed := callTool[godo.Droplet](ctx, c, t, "droplet-get", map[string]interface{}{"ID": droplet.ID})
 	require.NotEmpty(t, refreshed.SnapshotIDs, "Droplet should have a snapshot")
 
@@ -140,12 +135,16 @@ func TestDropletRestore(t *testing.T) {
 	defer deferCleanupImage(ctx, c, t, imageID)()
 	t.Logf("Restoring from Image ID: %.0f", imageID)
 
-	// 3. Restore
+	// Restore
 	restoreAction := callTool[godo.Action](ctx, c, t, "restore-droplet", map[string]interface{}{
 		"ID":      droplet.ID,
 		"ImageID": imageID,
 	})
 
-	WaitForActionComplete(ctx, c, t, droplet.ID, restoreAction.ID, 2*time.Minute)
-	LogActionCompleted(t, "Restore", restoreAction)
+	// Log 1: Initial
+	LogActionStatus(t, "Restore", restoreAction)
+
+	// Log 2: Final
+	completed := WaitForActionComplete(ctx, c, t, droplet.ID, restoreAction.ID, 2*time.Minute)
+	LogActionStatus(t, "Restore", completed)
 }
