@@ -98,7 +98,6 @@ func CreateTestDroplet(ctx context.Context, c *client.Client, t *testing.T, name
 	activeDroplet := WaitForDropletActive(ctx, c, t, droplet.ID, 2*time.Minute)
 
 	// Log 2: Final State (Confirmed "active")
-	// We reuse the helper to maintain the exact same formatting
 	LogResourceCreated(t, "droplet", activeDroplet.ID, activeDroplet.Name, activeDroplet.Status, activeDroplet.Region.Slug)
 
 	return activeDroplet
