@@ -18,7 +18,6 @@ func TestDropletLifecycle(t *testing.T) {
 
 	// 1. Create
 	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-test")
-	LogResourceCreated(t, "droplet", droplet.ID, droplet.Name, droplet.Status, droplet.Region.Slug)
 
 	// 2. List & Verify
 	type dropletShort struct {

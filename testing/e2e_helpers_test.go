@@ -75,8 +75,6 @@ func callTool[T any](ctx context.Context, c *client.Client, t *testing.T, name s
 func CreateTestDroplet(ctx context.Context, c *client.Client, t *testing.T, namePrefix string) godo.Droplet {
 	sshKeys := getSSHKeys(ctx, c, t)
 	region := selectRegion(ctx, c, t)
-
-	// Now capturing the slug as well
 	imageID, imageSlug := getTestImage(ctx, c, t)
 
 	dropletName := fmt.Sprintf("%s-%d", namePrefix, time.Now().Unix())
@@ -93,10 +91,17 @@ func CreateTestDroplet(ctx context.Context, c *client.Client, t *testing.T, name
 		"SSHKeys":    sshKeys,
 	})
 
-	// Log the ID immediately upon creation for transparency
+	// Log 1: Initial State (usually "new")
 	LogResourceCreated(t, "droplet", droplet.ID, droplet.Name, droplet.Status, region)
 
-	return WaitForDropletActive(ctx, c, t, droplet.ID, 2*time.Minute)
+	// Wait for provisioning
+	activeDroplet := WaitForDropletActive(ctx, c, t, droplet.ID, 2*time.Minute)
+
+	// Log 2: Final State (Confirmed "active")
+	// We reuse the helper to maintain the exact same formatting
+	LogResourceCreated(t, "droplet", activeDroplet.ID, activeDroplet.Name, activeDroplet.Status, activeDroplet.Region.Slug)
+
+	return activeDroplet
 }
 
 func DeleteResource(ctx context.Context, c *client.Client, t *testing.T, resourceType string, id interface{}) {
