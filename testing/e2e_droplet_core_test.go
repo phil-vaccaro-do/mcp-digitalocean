@@ -16,7 +16,7 @@ func TestDropletLifecycle(t *testing.T) {
 	ctx, c, gclient, teardown := setupTest(t)
 	defer teardown()
 
-	// 1. Create
+	// 1. Create (Logs "new" and "active" automatically)
 	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-test")
 
 	// 2. List & Verify
@@ -63,7 +63,7 @@ func TestDropletSnapshot(t *testing.T) {
 	t.Logf("Snapshot initiated: %s", snapshotName)
 
 	// 2. Wait
-	WaitForActionComplete(ctx, c, t, action.ID, 2*time.Minute)
+	WaitForActionComplete(ctx, c, t, droplet.ID, action.ID, 2*time.Minute)
 
 	// 3. Verify Snapshot Exists
 	d, err := testhelpers.WaitForDroplet(ctx, gclient, droplet.ID, func(d *godo.Droplet) bool {
@@ -113,7 +113,7 @@ func TestDropletRebuildBySlug(t *testing.T) {
 	})
 	t.Logf("Rebuild initiated with slug: %s", imageSlug)
 
-	WaitForActionComplete(ctx, c, t, action.ID, 5*time.Minute)
+	WaitForActionComplete(ctx, c, t, droplet.ID, action.ID, 5*time.Minute)
 	LogActionCompleted(t, "Rebuild", action)
 }
 
@@ -130,7 +130,7 @@ func TestDropletRestore(t *testing.T) {
 		"ID":   droplet.ID,
 		"Name": snapName,
 	})
-	WaitForActionComplete(ctx, c, t, snapAction.ID, 2*time.Minute)
+	WaitForActionComplete(ctx, c, t, droplet.ID, snapAction.ID, 2*time.Minute)
 
 	// 2. Get Snapshot ID from Droplet
 	refreshed := callTool[godo.Droplet](ctx, c, t, "droplet-get", map[string]interface{}{"ID": droplet.ID})
@@ -146,6 +146,6 @@ func TestDropletRestore(t *testing.T) {
 		"ImageID": imageID,
 	})
 
-	WaitForActionComplete(ctx, c, t, restoreAction.ID, 2*time.Minute)
+	WaitForActionComplete(ctx, c, t, droplet.ID, restoreAction.ID, 2*time.Minute)
 	LogActionCompleted(t, "Restore", restoreAction)
 }

@@ -91,13 +91,11 @@ func CreateTestDroplet(ctx context.Context, c *client.Client, t *testing.T, name
 		"SSHKeys":    sshKeys,
 	})
 
-	// Log 1: Initial State (usually "new")
 	LogResourceCreated(t, "droplet", droplet.ID, droplet.Name, droplet.Status, region)
 
-	// Wait for provisioning
 	activeDroplet := WaitForDropletActive(ctx, c, t, droplet.ID, 2*time.Minute)
 
-	// Log 2: Final State (Confirmed "active")
+	// Log confirmation of active state
 	LogResourceCreated(t, "droplet", activeDroplet.ID, activeDroplet.Name, activeDroplet.Status, activeDroplet.Region.Slug)
 
 	return activeDroplet
@@ -135,7 +133,6 @@ func getSSHKeys(ctx context.Context, c *client.Client, t *testing.T) []interface
 	return keyIDs
 }
 
-// getTestImage returns the Image ID and the Slug.
 func getTestImage(ctx context.Context, c *client.Client, t *testing.T) (float64, string) {
 	images := callTool[[]map[string]interface{}](ctx, c, t, "image-list", map[string]interface{}{"Type": "distribution"})
 
@@ -146,9 +143,8 @@ func getTestImage(ctx context.Context, c *client.Client, t *testing.T) (float64,
 	}
 	require.NotEmpty(t, images, "No images found")
 
-	// Fallback
 	firstID := images[0]["id"].(float64)
-	firstSlug, _ := images[0]["slug"].(string) // might be empty, but safe
+	firstSlug, _ := images[0]["slug"].(string)
 	return firstID, firstSlug
 }
 
@@ -179,13 +175,18 @@ func WaitForDropletActive(ctx context.Context, _ *client.Client, t *testing.T, d
 	return *d
 }
 
-func WaitForActionComplete(ctx context.Context, c *client.Client, t *testing.T, actionID int, timeout time.Duration) godo.Action {
+// WaitForActionComplete verifies the action via the tool, then waits via API.
+func WaitForActionComplete(ctx context.Context, c *client.Client, t *testing.T, dropletID int, actionID int, timeout time.Duration) godo.Action {
 	gclient := testhelpers.MustGodoClient()
 
-	act := callTool[godo.Action](ctx, c, t, "action-get", map[string]interface{}{"ID": float64(actionID)})
-	require.NotZero(t, act.ResourceID, "Action ResourceID is 0")
+	// Verify the 'droplet-action' tool works for this action
+	act := callTool[godo.Action](ctx, c, t, "droplet-action", map[string]interface{}{
+		"DropletID": float64(dropletID),
+		"ActionID":  float64(actionID),
+	})
+	require.Equal(t, actionID, act.ID, "Tool returned incorrect Action ID")
 
-	final, err := testhelpers.WaitForAction(ctx, gclient, act.ResourceID, actionID, 2*time.Second, timeout)
+	final, err := testhelpers.WaitForAction(ctx, gclient, dropletID, actionID, 2*time.Second, timeout)
 	require.NoError(t, err, "WaitForActionComplete failed")
 	return *final
 }
@@ -218,11 +219,10 @@ func LogResourceDeleted(t *testing.T, resourceType string, id interface{}, err e
 	}
 }
 
-func LogActionCompleted(t *testing.T, actionType string, action godo.Action) {
-	t.Logf("[Action] %s Completed: ID=%d, Status=%s", actionType, action.ID, action.Status)
+func LogActionCompleted(t *testing.T, context string, action godo.Action) {
+	t.Logf("[Action] %s Completed: ID=%d, Type=%s, Status=%s", context, action.ID, action.Type, action.Status)
 }
 
-// formatID handles formatting ID types, ensuring floats (from JSON) print as integers.
 func formatID(id interface{}) string {
 	switch v := id.(type) {
 	case float64:

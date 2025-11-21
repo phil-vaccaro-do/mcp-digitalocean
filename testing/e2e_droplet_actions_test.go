@@ -129,3 +129,31 @@ func TestDropletEnableBackups(t *testing.T) {
 	require.NoError(t, err, "Backups were not enabled within timeout")
 	t.Logf("Backups Verified for Droplet %d", refreshed.ID)
 }
+
+// TestDropletActionTool explicitly verifies the "droplet-action" tool.
+func TestDropletActionTool(t *testing.T) {
+	ctx, c, gclient, teardown := setupTest(t)
+	defer teardown()
+
+	d := CreateTestDroplet(ctx, c, t, "mcp-e2e-action-tool")
+	defer deferCleanupDroplet(ctx, c, t, d.ID)()
+
+	// Trigger an action (Power Cycle) to get a valid Action ID
+	cycleAction := callTool[godo.Action](ctx, c, t, "power-cycle-droplet", map[string]interface{}{"ID": d.ID})
+	require.NotZero(t, cycleAction.ID)
+
+	// Verify the 'droplet-action' tool retrieves it correctly
+	fetchedAction := callTool[godo.Action](ctx, c, t, "droplet-action", map[string]interface{}{
+		"DropletID": float64(d.ID),
+		"ActionID":  float64(cycleAction.ID),
+	})
+
+	t.Logf("Retrieved Action via Tool: ID=%d, Type=%s, Status=%s", fetchedAction.ID, fetchedAction.Type, fetchedAction.Status)
+
+	require.Equal(t, cycleAction.ID, fetchedAction.ID)
+	require.Equal(t, "power_cycle", fetchedAction.Type)
+
+	final, err := testhelpers.WaitForAction(ctx, gclient, d.ID, cycleAction.ID, 2*time.Second, 2*time.Minute)
+	require.NoError(t, err)
+	LogActionCompleted(t, "ActionToolTest", *final)
+}
