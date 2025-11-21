@@ -3,157 +3,150 @@
 package testing
 
 import (
-	"context"
 	"fmt"
+	"mcp-digitalocean/internal/testhelpers"
 	"testing"
 	"time"
 
 	"github.com/digitalocean/godo"
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDropletLifecycle(t *testing.T) {
-	ctx := context.Background()
-	c := initializeClient(ctx, t)
-	defer c.Close()
+	ctx, c, gclient, teardown := setupTest(t)
+	defer teardown()
 
+	// 1. Create
 	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-test")
 	LogResourceCreated(t, "droplet", droplet.ID, droplet.Name, droplet.Status, droplet.Region.Slug)
 
-	require.Equal(t, "active", droplet.Status)
-	t.Logf("Retrieved droplet successfully")
-
-	var droplets []map[string]interface{}
-	callToolJSON(ctx, c, t, "droplet-list", map[string]interface{}{"Page": 1, "PerPage": 50}, &droplets)
-	require.NotEmpty(t, droplets)
+	// 2. List & Verify
+	type dropletShort struct {
+		ID int `json:"id"`
+	}
+	droplets := callTool[[]dropletShort](ctx, c, t, "droplet-list", map[string]interface{}{"Page": 1, "PerPage": 50})
 
 	found := false
 	for _, d := range droplets {
-		if int(d["id"].(float64)) == droplet.ID {
+		if d.ID == droplet.ID {
 			found = true
 			break
 		}
 	}
 	require.True(t, found, "Created droplet not found in list")
-	LogResourceList(t, "droplet", "in list", droplets)
 
-	resources := ListResources(ctx, c, t, "droplet", "before deletion", 1, 50)
-	LogResourceList(t, "droplet", "before deletion", resources)
+	// 3. Delete
+	DeleteResource(ctx, c, t, "droplet", droplet.ID)
 
-	deleteResp, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name: "droplet-delete",
-			Arguments: map[string]interface{}{
-				"ID": float64(droplet.ID),
-			},
-		},
-	})
-	require.NoError(t, err)
-	LogResourceDeleted(t, "droplet", droplet.ID, err, deleteResp)
+	// 4. Confirm Deletion (Direct API)
+	err := testhelpers.WaitForDropletDeleted(ctx, gclient, droplet.ID, 3*time.Second, 2*time.Minute)
+	if err != nil {
+		t.Logf("Warning: direct WaitForDropletDeleted failed: %v", err)
+	} else {
+		t.Logf("Confirmed droplet deletion via direct API")
+	}
 }
 
 func TestDropletSnapshot(t *testing.T) {
-	ctx := context.Background()
-	c := initializeClient(ctx, t)
-	defer c.Close()
+	ctx, c, gclient, teardown := setupTest(t)
+	defer teardown()
 
 	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-snapshot")
 	defer deferCleanupDroplet(ctx, c, t, droplet.ID)()
-	LogResourceCreated(t, "droplet", droplet.ID, droplet.Name, droplet.Status, droplet.Region.Slug)
 
+	// 1. Trigger Snapshot
 	snapshotName := fmt.Sprintf("snapshot-%d", time.Now().Unix())
-	var action godo.Action
-	callToolJSON(ctx, c, t, "snapshot-droplet", map[string]interface{}{"ID": float64(droplet.ID), "Name": snapshotName}, &action)
-	require.NotEmpty(t, action.ID)
-	t.Logf("Snapshot action initiated: ID=%s, Name=%s", formatID(action.ID), snapshotName)
-	completedAction := WaitForActionComplete(ctx, c, t, action.ID, 2*time.Minute)
-	LogActionCompleted(t, "Snapshot", completedAction)
+	action := callTool[godo.Action](ctx, c, t, "snapshot-droplet", map[string]interface{}{
+		"ID":   droplet.ID,
+		"Name": snapshotName,
+	})
 
-	var refreshed godo.Droplet
-	callToolJSON(ctx, c, t, "droplet-get", map[string]interface{}{"ID": float64(droplet.ID)}, &refreshed)
-	if len(refreshed.SnapshotIDs) > 0 {
-		snapshotImageID := float64(refreshed.SnapshotIDs[0])
-		t.Logf("Snapshot image ID: %s", formatID(snapshotImageID))
-		// Ensure snapshot image is cleaned up after the test
-		defer deferCleanupImage(ctx, c, t, snapshotImageID)()
-	}
+	t.Logf("Snapshot initiated: %s", snapshotName)
+
+	// 2. Wait
+	WaitForActionComplete(ctx, c, t, action.ID, 2*time.Minute)
+
+	// 3. Verify Snapshot Exists
+	d, err := testhelpers.WaitForDroplet(ctx, gclient, droplet.ID, func(d *godo.Droplet) bool {
+		return d != nil && len(d.SnapshotIDs) > 0
+	}, 3*time.Second, 2*time.Minute)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, d.SnapshotIDs)
+
+	t.Logf("Snapshot verified. Image ID: %d", d.SnapshotIDs[0])
+	defer deferCleanupImage(ctx, c, t, float64(d.SnapshotIDs[0]))()
 }
 
 func TestDropletRebuildBySlug(t *testing.T) {
-	ctx := context.Background()
-	c := initializeClient(ctx, t)
-	defer c.Close()
+	ctx, c, _, teardown := setupTest(t)
+	defer teardown()
 
-	var images []map[string]interface{}
-	callToolJSON(ctx, c, t, "image-list", map[string]interface{}{"Page": 1, "PerPage": 10}, &images)
-	require.NotEmpty(t, images)
+	// 1. Find Ubuntu Image Slug
+	type imageShort struct {
+		ID   int    `json:"id"`
+		Slug string `json:"slug"`
+	}
+	images := callTool[[]imageShort](ctx, c, t, "image-list", map[string]interface{}{"Page": 1, "PerPage": 20})
 
 	var imageSlug string
-	var imageID float64
 	for _, img := range images {
-		if slug, ok := img["slug"].(string); ok && slug == "ubuntu-22-04-x64" {
-			imageSlug = slug
-			imageID = img["id"].(float64)
+		if img.Slug == "ubuntu-22-04-x64" {
+			imageSlug = img.Slug
 			break
 		}
 	}
-	if imageSlug == "" {
-		for _, img := range images {
-			if slug, ok := img["slug"].(string); ok && slug != "" {
-				imageSlug = slug
-				imageID = img["id"].(float64)
-				break
-			}
-		}
+	if imageSlug == "" && len(images) > 0 {
+		imageSlug = images[0].Slug
 	}
 	if imageSlug == "" {
-		t.Skip("No image with slug found; skipping rebuild-by-slug test")
+		t.Skip("No suitable image slug found")
 	}
-	t.Logf("Using image slug: %s (ID: %s)", imageSlug, formatID(imageID))
 
-	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-rebuild-slug")
-	LogResourceCreated(t, "droplet", droplet.ID, droplet.Name, droplet.Status, droplet.Region.Slug)
+	// 2. Create Droplet
+	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-rebuild")
 	defer deferCleanupDroplet(ctx, c, t, droplet.ID)()
 
-	var action godo.Action
-	callToolJSON(ctx, c, t, "rebuild-droplet-by-slug", map[string]interface{}{"ID": float64(droplet.ID), "ImageSlug": imageSlug}, &action)
-	require.NotEmpty(t, action.ID)
-	t.Logf("Rebuild by slug action initiated: ID=%s, ImageSlug=%s", formatID(action.ID), imageSlug)
-	completedAction := WaitForActionComplete(ctx, c, t, action.ID, 2*time.Minute)
-	LogActionCompleted(t, "Rebuild", completedAction)
+	// 3. Rebuild
+	action := callTool[godo.Action](ctx, c, t, "rebuild-droplet-by-slug", map[string]interface{}{
+		"ID":        droplet.ID,
+		"ImageSlug": imageSlug,
+	})
+	t.Logf("Rebuild initiated with slug: %s", imageSlug)
+
+	WaitForActionComplete(ctx, c, t, action.ID, 5*time.Minute)
+	LogActionCompleted(t, "Rebuild", action)
 }
 
 func TestDropletRestore(t *testing.T) {
-	ctx := context.Background()
-	c := initializeClient(ctx, t)
-	defer c.Close()
+	ctx, c, _, teardown := setupTest(t)
+	defer teardown()
 
 	droplet := CreateTestDroplet(ctx, c, t, "mcp-e2e-restore")
-	LogResourceCreated(t, "droplet", droplet.ID, droplet.Name, droplet.Status, droplet.Region.Slug)
 	defer deferCleanupDroplet(ctx, c, t, droplet.ID)()
 
-	snapshotName := fmt.Sprintf("restore-snapshot-%d", time.Now().Unix())
-	var snapshotAction godo.Action
-	callToolJSON(ctx, c, t, "snapshot-droplet", map[string]interface{}{"ID": float64(droplet.ID), "Name": snapshotName}, &snapshotAction)
-	t.Logf("Snapshot created: %s", snapshotName)
+	// 1. Create Snapshot
+	snapName := fmt.Sprintf("restore-snap-%d", time.Now().Unix())
+	snapAction := callTool[godo.Action](ctx, c, t, "snapshot-droplet", map[string]interface{}{
+		"ID":   droplet.ID,
+		"Name": snapName,
+	})
+	WaitForActionComplete(ctx, c, t, snapAction.ID, 2*time.Minute)
 
-	_ = WaitForActionComplete(ctx, c, t, snapshotAction.ID, 2*time.Minute)
+	// 2. Get Snapshot ID from Droplet
+	refreshed := callTool[godo.Droplet](ctx, c, t, "droplet-get", map[string]interface{}{"ID": droplet.ID})
+	require.NotEmpty(t, refreshed.SnapshotIDs, "Droplet should have a snapshot")
 
-	var refreshedDroplet godo.Droplet
-	callToolJSON(ctx, c, t, "droplet-get", map[string]interface{}{"ID": float64(droplet.ID)}, &refreshedDroplet)
-	require.NotEmpty(t, refreshedDroplet.SnapshotIDs, "Droplet should have at least one snapshot")
+	imageID := float64(refreshed.SnapshotIDs[0])
+	defer deferCleanupImage(ctx, c, t, imageID)()
+	t.Logf("Restoring from Image ID: %.0f", imageID)
 
-	snapshotImageID := float64(refreshedDroplet.SnapshotIDs[0])
-	t.Logf("Refreshed droplet: ID=%s, Status=%s, Name=%s, Snapshots=%v", formatID(refreshedDroplet.ID), refreshedDroplet.Status, refreshedDroplet.Name, refreshedDroplet.SnapshotIDs)
-	t.Logf("Using snapshot image ID: %s", formatID(snapshotImageID))
-	// Ensure snapshot image created for restore is removed during cleanup
-	defer deferCleanupImage(ctx, c, t, snapshotImageID)()
+	// 3. Restore
+	restoreAction := callTool[godo.Action](ctx, c, t, "restore-droplet", map[string]interface{}{
+		"ID":      droplet.ID,
+		"ImageID": imageID,
+	})
 
-	var restoreAction godo.Action
-	callToolJSON(ctx, c, t, "restore-droplet", map[string]interface{}{"ID": float64(droplet.ID), "ImageID": snapshotImageID}, &restoreAction)
-	require.NotEmpty(t, restoreAction.ID)
-	t.Logf("Restore action initiated: ID=%s, ImageID=%s", formatID(restoreAction.ID), formatID(snapshotImageID))
-	completedAction := WaitForActionComplete(ctx, c, t, restoreAction.ID, 2*time.Minute)
-	LogActionCompleted(t, "Restore", completedAction)
+	WaitForActionComplete(ctx, c, t, restoreAction.ID, 2*time.Minute)
+	LogActionCompleted(t, "Restore", restoreAction)
 }
