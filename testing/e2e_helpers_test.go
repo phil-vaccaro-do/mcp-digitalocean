@@ -20,7 +20,6 @@ import (
 // setupTest initializes context, MCP client (via Docker/HTTP), and Godo client.
 func setupTest(t *testing.T) (context.Context, *client.Client, *godo.Client, func()) {
 	ctx := context.Background()
-	// Calls initializeClient from e2e_test.go
 	c := initializeClient(ctx, t)
 	gclient := testhelpers.MustGodoClient()
 
@@ -79,7 +78,7 @@ func CreateTestDroplet(ctx context.Context, c *client.Client, t *testing.T, name
 	imageID := getTestImage(ctx, c, t)
 	dropletName := fmt.Sprintf("%s-%d", namePrefix, time.Now().Unix())
 
-	t.Logf("Creating Droplet: %s (Image: %.0f, Region: %s)", dropletName, imageID, region)
+	t.Logf("Creating Droplet: %s (Image: %.0f, Region: %s)...", dropletName, imageID, region)
 
 	droplet := callTool[godo.Droplet](ctx, c, t, "droplet-create", map[string]interface{}{
 		"Name":       dropletName,
@@ -90,6 +89,9 @@ func CreateTestDroplet(ctx context.Context, c *client.Client, t *testing.T, name
 		"Monitoring": true,
 		"SSHKeys":    sshKeys,
 	})
+
+	// Log the ID immediately upon creation for transparency
+	LogResourceCreated(t, "droplet", droplet.ID, droplet.Name, droplet.Status, region)
 
 	return WaitForDropletActive(ctx, c, t, droplet.ID, 2*time.Minute)
 }
@@ -208,6 +210,7 @@ func LogActionCompleted(t *testing.T, actionType string, action godo.Action) {
 	t.Logf("[Action] %s Completed: ID=%d, Status=%s", actionType, action.ID, action.Status)
 }
 
+// formatID handles formatting ID types, ensuring floats (from JSON) print as integers.
 func formatID(id interface{}) string {
 	switch v := id.(type) {
 	case float64:
