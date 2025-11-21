@@ -209,5 +209,14 @@ func LogActionCompleted(t *testing.T, actionType string, action godo.Action) {
 }
 
 func formatID(id interface{}) string {
-	return fmt.Sprintf("%v", id)
+	switch v := id.(type) {
+	case float64:
+		return fmt.Sprintf("%.0f", v)
+	case float32:
+		return fmt.Sprintf("%.0f", v)
+	case int, int32, int64, uint, uint32, uint64:
+		return fmt.Sprintf("%d", v)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
