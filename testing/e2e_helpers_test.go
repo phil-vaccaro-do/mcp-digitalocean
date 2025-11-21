@@ -75,10 +75,13 @@ func callTool[T any](ctx context.Context, c *client.Client, t *testing.T, name s
 func CreateTestDroplet(ctx context.Context, c *client.Client, t *testing.T, namePrefix string) godo.Droplet {
 	sshKeys := getSSHKeys(ctx, c, t)
 	region := selectRegion(ctx, c, t)
-	imageID := getTestImage(ctx, c, t)
+
+	// Now capturing the slug as well
+	imageID, imageSlug := getTestImage(ctx, c, t)
+
 	dropletName := fmt.Sprintf("%s-%d", namePrefix, time.Now().Unix())
 
-	t.Logf("Creating Droplet: %s (Image: %.0f, Region: %s)...", dropletName, imageID, region)
+	t.Logf("Creating Droplet: %s (Image: %s [ID: %.0f], Region: %s)...", dropletName, imageSlug, imageID, region)
 
 	droplet := callTool[godo.Droplet](ctx, c, t, "droplet-create", map[string]interface{}{
 		"Name":       dropletName,
@@ -128,16 +131,21 @@ func getSSHKeys(ctx context.Context, c *client.Client, t *testing.T) []interface
 	return keyIDs
 }
 
-func getTestImage(ctx context.Context, c *client.Client, t *testing.T) float64 {
+// getTestImage returns the Image ID and the Slug.
+func getTestImage(ctx context.Context, c *client.Client, t *testing.T) (float64, string) {
 	images := callTool[[]map[string]interface{}](ctx, c, t, "image-list", map[string]interface{}{"Type": "distribution"})
 
 	for _, img := range images {
 		if slug, ok := img["slug"].(string); ok && slug == "ubuntu-22-04-x64" {
-			return img["id"].(float64)
+			return img["id"].(float64), slug
 		}
 	}
 	require.NotEmpty(t, images, "No images found")
-	return images[0]["id"].(float64)
+
+	// Fallback
+	firstID := images[0]["id"].(float64)
+	firstSlug, _ := images[0]["slug"].(string) // might be empty, but safe
+	return firstID, firstSlug
 }
 
 func selectRegion(ctx context.Context, c *client.Client, t *testing.T) string {

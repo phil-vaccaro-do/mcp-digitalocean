@@ -81,6 +81,8 @@ func TestDropletRename(t *testing.T) {
 
 	require.NoError(t, err, "Failed to verify rename")
 	require.Equal(t, newName, refreshed.Name)
+
+	t.Logf("Droplet successfully renamed to: %s", refreshed.Name)
 }
 
 func TestDropletEnableIPv6(t *testing.T) {
