@@ -93,10 +93,6 @@ func (i *ImageTool) listImages(ctx context.Context, req mcp.CallToolRequest) (*m
 	return mcp.NewToolResultText(string(jsonData)), nil
 }
 
-// getImageByID retrieves a specific image by its numeric ID or Slug.
-// Note: godo.ImagesService.GetByID handles generic lookup if you pass ID,
-// but GetBySlug exists for strings. This tool interface simplifies to ID (int) for consistency,
-// or we could support a string "Identifier" to check both. Sticking to ID for now based on previous code.
 func (i *ImageTool) getImageByID(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, ok := req.GetArguments()["ID"].(float64)
 	if !ok {
