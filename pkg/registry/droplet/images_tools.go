@@ -59,8 +59,7 @@ func (i *ImageTool) listImages(ctx context.Context, req mcp.CallToolRequest) (*m
 	case "user":
 		images, _, apiErr = client.Images.ListUser(ctx, opt)
 	default:
-		// Default to listing all if unspecified, or distribution if that fits your default use-case
-		// Using List() to get everything matches standard "list" expectations best
+		// Default to listing all if unspecified
 		images, _, apiErr = client.Images.List(ctx, opt)
 	}
 
@@ -68,8 +67,7 @@ func (i *ImageTool) listImages(ctx context.Context, req mcp.CallToolRequest) (*m
 		return mcp.NewToolResultErrorFromErr("api error", apiErr), nil
 	}
 
-	// Create a simplified view or return full object.
-	// Returning mapped structure to match other tools' verbosity.
+	// returning mapped structure to match other tools' verbosity.
 	filteredImages := make([]map[string]any, len(images))
 	for idx, image := range images {
 		filteredImages[idx] = map[string]any{
@@ -93,6 +91,7 @@ func (i *ImageTool) listImages(ctx context.Context, req mcp.CallToolRequest) (*m
 	return mcp.NewToolResultText(string(jsonData)), nil
 }
 
+// getImageByID retrieves a specific image by its numeric ID.
 func (i *ImageTool) getImageByID(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, ok := req.GetArguments()["ID"].(float64)
 	if !ok {
@@ -105,6 +104,58 @@ func (i *ImageTool) getImageByID(ctx context.Context, req mcp.CallToolRequest) (
 	}
 
 	image, _, err := client.Images.GetByID(ctx, int(id))
+	if err != nil {
+		return mcp.NewToolResultErrorFromErr("api error", err), nil
+	}
+
+	jsonData, err := json.MarshalIndent(image, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal error: %w", err)
+	}
+
+	return mcp.NewToolResultText(string(jsonData)), nil
+}
+
+// createImage creates a new custom image from a URL.
+func (i *ImageTool) createImage(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	name, ok := req.GetArguments()["Name"].(string)
+	if !ok || name == "" {
+		return mcp.NewToolResultError("Name is required"), nil
+	}
+	url, ok := req.GetArguments()["Url"].(string)
+	if !ok || url == "" {
+		return mcp.NewToolResultError("Url is required"), nil
+	}
+	region, ok := req.GetArguments()["Region"].(string)
+	if !ok || region == "" {
+		return mcp.NewToolResultError("Region is required"), nil
+	}
+	distribution, _ := req.GetArguments()["Distribution"].(string)
+	description, _ := req.GetArguments()["Description"].(string)
+	tagsArg, _ := req.GetArguments()["Tags"].([]any)
+
+	var tags []string
+	for _, t := range tagsArg {
+		if s, ok := t.(string); ok {
+			tags = append(tags, s)
+		}
+	}
+
+	createRequest := &godo.CustomImageCreateRequest{
+		Name:         name,
+		Url:          url,
+		Region:       region,
+		Distribution: distribution,
+		Description:  description,
+		Tags:         tags,
+	}
+
+	client, err := i.client(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get DigitalOcean client: %w", err)
+	}
+
+	image, _, err := client.Images.Create(ctx, createRequest)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("api error", err), nil
 	}
@@ -189,6 +240,19 @@ func (i *ImageTool) Tools() []server.ServerTool {
 				"image-get",
 				mcp.WithDescription("Get a specific image by its numeric ID."),
 				mcp.WithNumber("ID", mcp.Required(), mcp.Description("Image ID")),
+			),
+		},
+		{
+			Handler: i.createImage,
+			Tool: mcp.NewTool(
+				"image-create",
+				mcp.WithDescription("Create a custom image from a URL (e.g. QCOW2, ISO)."),
+				mcp.WithString("Name", mcp.Required(), mcp.Description("Name of the new image")),
+				mcp.WithString("Url", mcp.Required(), mcp.Description("URL to import the image from")),
+				mcp.WithString("Region", mcp.Required(), mcp.Description("Region slug (e.g. nyc3)")),
+				mcp.WithString("Distribution", mcp.Description("Distribution name (e.g. Ubuntu)")),
+				mcp.WithString("Description", mcp.Description("Description of the image")),
+				mcp.WithArray("Tags", mcp.Description("Tags to apply"), mcp.Items(map[string]any{"type": "string"})),
 			),
 		},
 		{
