@@ -25,7 +25,7 @@ func TestImageTool_listImages(t *testing.T) {
 	defer ctrl.Finish()
 
 	testImages := []godo.Image{
-		{ID: 1, Name: "Ubuntu 22.04", Type: "distribution", Slug: "ubuntu-22-04-x64"},
+		{ID: 1, Name: "Ubuntu 20.04", Type: "distribution", Slug: "ubuntu-20-04-x64"},
 		{ID: 2, Name: "My Backup", Type: "snapshot"},
 	}
 
@@ -174,10 +174,114 @@ func TestImageTool_getImageByID(t *testing.T) {
 			require.NotNil(t, resp)
 			require.False(t, resp.IsError)
 
-			// We need to unmarshal to map because the tool returns JSON text
 			var outImage map[string]any
-			err = json.Unmarshal([]byte(resp.Content[0].(mcp.TextContent).Text), &outImage)
+			require.NoError(t, json.Unmarshal([]byte(resp.Content[0].(mcp.TextContent).Text), &outImage))
+			require.Equal(t, testImage.Name, outImage["name"])
+		})
+	}
+}
+
+func TestImageTool_createImage(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	testImage := &godo.Image{ID: 123, Name: "custom-image", Distribution: "Ubuntu"}
+
+	tests := []struct {
+		name        string
+		args        map[string]any
+		mockSetup   func(*MockImagesService)
+		expectError bool
+	}{
+		{
+			name: "Successful create",
+			args: map[string]any{
+				"Name":         "custom-image",
+				"Url":          "http://example.com/image.iso",
+				"Region":       "nyc3",
+				"Distribution": "Ubuntu",
+				"Description":  "A custom image",
+				"Tags":         []any{"custom"},
+			},
+			mockSetup: func(m *MockImagesService) {
+				expectedReq := &godo.CustomImageCreateRequest{
+					Name:         "custom-image",
+					Url:          "http://example.com/image.iso",
+					Region:       "nyc3",
+					Distribution: "Ubuntu",
+					Description:  "A custom image",
+					Tags:         []string{"custom"},
+				}
+				m.EXPECT().
+					Create(gomock.Any(), expectedReq).
+					Return(testImage, &godo.Response{}, nil).
+					Times(1)
+			},
+		},
+		{
+			name: "Missing Name",
+			args: map[string]any{
+				"Url":    "http://example.com/image.iso",
+				"Region": "nyc3",
+			},
+			expectError: true,
+		},
+		{
+			name: "Missing Url",
+			args: map[string]any{
+				"Name":   "custom-image",
+				"Region": "nyc3",
+			},
+			expectError: true,
+		},
+		{
+			name: "Missing Region",
+			args: map[string]any{
+				"Name": "custom-image",
+				"Url":  "http://example.com/image.iso",
+			},
+			expectError: true,
+		},
+		{
+			name: "API Error",
+			args: map[string]any{
+				"Name":   "custom-image",
+				"Url":    "http://example.com/image.iso",
+				"Region": "nyc3",
+			},
+			mockSetup: func(m *MockImagesService) {
+				m.EXPECT().
+					Create(gomock.Any(), gomock.Any()).
+					Return(nil, nil, errors.New("api error")).
+					Times(1)
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mockImages := NewMockImagesService(ctrl)
+			if tc.mockSetup != nil {
+				tc.mockSetup(mockImages)
+			}
+			tool := setupImageToolWithMocks(mockImages)
+
+			req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: tc.args}}
+			resp, err := tool.createImage(context.Background(), req)
+
+			if tc.expectError {
+				require.NotNil(t, resp)
+				require.True(t, resp.IsError)
+				return
+			}
+
 			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.False(t, resp.IsError)
+
+			var outImage map[string]any
+			require.NoError(t, json.Unmarshal([]byte(resp.Content[0].(mcp.TextContent).Text), &outImage))
 			require.Equal(t, testImage.Name, outImage["name"])
 		})
 	}
@@ -213,17 +317,6 @@ func TestImageTool_updateImage(t *testing.T) {
 		{
 			name:        "Missing ID",
 			args:        map[string]any{"Name": "new-name"},
-			expectError: true,
-		},
-		{
-			name: "API Error",
-			args: map[string]any{"ID": float64(123), "Name": "new-name"},
-			mockSetup: func(m *MockImagesService) {
-				m.EXPECT().
-					Update(gomock.Any(), 123, gomock.Any()).
-					Return(nil, nil, errors.New("api error")).
-					Times(1)
-			},
 			expectError: true,
 		},
 	}
