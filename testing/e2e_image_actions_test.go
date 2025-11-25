@@ -20,13 +20,13 @@ func TestImageTransfer(t *testing.T) {
 	image := CreateTestSnapshotImage(ctx, c, t, "mcp-e2e-img-transfer")
 	defer deferCleanupImage(ctx, c, t, float64(image.ID))()
 
+	require.NotEmpty(t, image.Regions)
+
 	// Determine a target region different from current
 	currentRegion := image.Regions[0]
-	var targetRegion string
+	targetRegion := "nyc1"
 	if currentRegion == "nyc1" {
 		targetRegion = "nyc3"
-	} else {
-		targetRegion = "nyc1"
 	}
 
 	t.Logf("Transferring image %d from %s to %s...", image.ID, currentRegion, targetRegion)
