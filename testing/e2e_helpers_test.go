@@ -125,8 +125,8 @@ func CreateTestDroplet(ctx context.Context, c *client.Client, t *testing.T, name
 func CreateTestSnapshotImage(ctx context.Context, c *client.Client, t *testing.T, namePrefix string) godo.Image {
 	// 1. Create Droplet
 	droplet := CreateTestDroplet(ctx, c, t, namePrefix+"-setup")
-	gclient := testhelpers.MustGodoClient()
-
+	gclient, err := testhelpers.MustGodoClient(ctx, t.Name())
+	require.NoError(t, err)
 	// Ensure cleanup of the setup droplet
 	defer func() {
 		DeleteResource(ctx, c, t, "droplet", float64(droplet.ID))
@@ -244,7 +244,8 @@ func WaitForDropletActive(ctx context.Context, _ *client.Client, t *testing.T, d
 }
 
 func WaitForImageAvailable(ctx context.Context, _ *client.Client, t *testing.T, imageID int, timeout time.Duration) godo.Image {
-	gclient := testhelpers.MustGodoClient()
+	gclient, err := testhelpers.MustGodoClient(ctx, t.Name())
+	require.NoError(t, err)
 	img, err := testhelpers.WaitForImage(ctx, gclient, imageID, testhelpers.IsImageAvailable, 3*time.Second, timeout)
 	require.NoError(t, err, "WaitForImageAvailable failed")
 	return *img
@@ -267,7 +268,8 @@ func WaitForActionComplete(ctx context.Context, c *client.Client, t *testing.T, 
 }
 
 func WaitForImageActionComplete(ctx context.Context, c *client.Client, t *testing.T, imageID int, actionID int, timeout time.Duration) godo.Action {
-	gclient := testhelpers.MustGodoClient()
+	gclient, err := testhelpers.MustGodoClient(ctx, t.Name())
+	require.NoError(t, err)
 
 	// Verify tool works
 	act := callTool[godo.Action](ctx, c, t, "image-action-get", map[string]any{

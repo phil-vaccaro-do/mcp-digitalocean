@@ -14,6 +14,8 @@ import (
 )
 
 func TestImageList(t *testing.T) {
+	t.Parallel()
+
 	ctx, c, _, teardown := setupTest(t)
 	defer teardown()
 
@@ -40,6 +42,8 @@ func TestImageList(t *testing.T) {
 }
 
 func TestImageGet(t *testing.T) {
+	t.Parallel()
+
 	ctx, c, _, teardown := setupTest(t)
 	defer teardown()
 
@@ -65,6 +69,8 @@ func TestImageGet(t *testing.T) {
 }
 
 func TestImageLifecycle(t *testing.T) {
+	t.Parallel()
+
 	ctx, c, gclient, teardown := setupTest(t)
 	defer teardown()
 

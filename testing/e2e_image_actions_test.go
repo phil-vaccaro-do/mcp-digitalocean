@@ -11,6 +11,8 @@ import (
 )
 
 func TestImageTransfer(t *testing.T) {
+	t.Parallel()
+
 	ctx, c, gclient, teardown := setupTest(t)
 	defer teardown()
 
