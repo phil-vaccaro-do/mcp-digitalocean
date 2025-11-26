@@ -344,6 +344,13 @@ func (d *DropletTool) Tools() []server.ServerTool {
 			),
 		},
 		{
+			Handler: d.getDropletNeighbors,
+			Tool: mcp.NewTool("droplet-neighbors",
+				mcp.WithDescription("List a droplet's neighbors (droplets on the same physical host)"),
+				mcp.WithNumber("ID", mcp.Required(), mcp.Description("ID of the droplet")),
+			),
+		},
+		{
 			Handler: d.listDropletSnapshots,
 			Tool: mcp.NewTool("droplet-snapshots",
 				mcp.WithDescription("List snapshots for a droplet"),
