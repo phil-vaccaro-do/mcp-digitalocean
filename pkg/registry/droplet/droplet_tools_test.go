@@ -22,6 +22,21 @@ func setupDropletToolWithMocks(droplets *MockDropletsService, actions *MockDropl
 	return NewDropletTool(client)
 }
 
+// findToolByName finds a tool handler by name from the Tools() list
+func findToolByName(tools []interface {
+	Handler(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+}, name string,
+) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	for _, tool := range tools {
+		if t, ok := tool.(interface{ GetTool() mcp.Tool }); ok {
+			if t.GetTool().Name == name {
+				return tool.Handler
+			}
+		}
+	}
+	return nil
+}
+
 func TestDropletTool_createDroplet(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -95,8 +110,17 @@ func TestDropletTool_createDroplet(t *testing.T) {
 				tc.mockSetup(mockDroplets)
 			}
 			tool := setupDropletToolWithMocks(mockDroplets, mockActions)
+			tools := tool.Tools()
+			var handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+			for _, t := range tools {
+				if t.Tool.Name == "droplet-create" {
+					handler = t.Handler
+					break
+				}
+			}
+			require.NotNil(t, handler, "droplet-create tool not found")
 			req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: tc.args}}
-			resp, err := tool.createDroplet(context.Background(), req)
+			resp, err := handler(context.Background(), req)
 			if tc.expectError {
 				require.NotNil(t, resp)
 				require.True(t, resp.IsError)
@@ -160,8 +184,17 @@ func TestDropletTool_getDropletByID(t *testing.T) {
 				tc.mockSetup(mockDroplets)
 			}
 			tool := setupDropletToolWithMocks(mockDroplets, mockActions)
+			tools := tool.Tools()
+			var handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+			for _, t := range tools {
+				if t.Tool.Name == "droplet-get" {
+					handler = t.Handler
+					break
+				}
+			}
+			require.NotNil(t, handler, "droplet-get tool not found")
 			req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: tc.args}}
-			resp, err := tool.getDropletByID(context.Background(), req)
+			resp, err := handler(context.Background(), req)
 			if tc.expectError {
 				require.NotNil(t, resp)
 				require.True(t, resp.IsError)
@@ -294,8 +327,17 @@ func TestDropletTool_deleteDroplet(t *testing.T) {
 				tc.mockSetup(mockDroplets)
 			}
 			tool := setupDropletToolWithMocks(mockDroplets, mockActions)
+			tools := tool.Tools()
+			var handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+			for _, t := range tools {
+				if t.Tool.Name == "droplet-delete" {
+					handler = t.Handler
+					break
+				}
+			}
+			require.NotNil(t, handler, "droplet-delete tool not found")
 			req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: tc.args}}
-			resp, err := tool.deleteDroplet(context.Background(), req)
+			resp, err := handler(context.Background(), req)
 			if tc.expectError {
 				require.NotNil(t, resp)
 				require.True(t, resp.IsError)
@@ -368,8 +410,17 @@ func TestDropletTool_getDroplets(t *testing.T) {
 				tc.mockSetup(mockDroplets)
 			}
 			tool := setupDropletToolWithMocks(mockDroplets, mockActions)
+			tools := tool.Tools()
+			var handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+			for _, t := range tools {
+				if t.Tool.Name == "droplet-list" {
+					handler = t.Handler
+					break
+				}
+			}
+			require.NotNil(t, handler, "droplet-list tool not found")
 			req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: tc.args}}
-			resp, err := tool.getDroplets(context.Background(), req)
+			resp, err := handler(context.Background(), req)
 			if tc.expectError {
 				require.NotNil(t, resp)
 				require.True(t, resp.IsError)
