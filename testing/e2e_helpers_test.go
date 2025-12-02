@@ -86,8 +86,7 @@ type genericActionWaiter func(ctx context.Context, client *godo.Client, resource
 func triggerGenericActionAndWait(t *testing.T, tool string, args map[string]any, resourceID int, waiter genericActionWaiter, timeout time.Duration) {
 	t.Helper()
 
-	ctx, _ := getTestClient(t)
-
+	ctx := context.Background()
 	gclient, err := testhelpers.MustGodoClient(ctx, t.Name())
 	require.NoError(t, err)
 
@@ -459,8 +458,7 @@ func WaitForImageAvailable(t *testing.T, imageID int, timeout time.Duration) god
 func WaitForActionComplete(t *testing.T, dropletID int, actionID int, timeout time.Duration) godo.Action {
 	t.Helper()
 
-	ctx, _ := getTestClient(t)
-
+	ctx := context.Background()
 	gclient, err := testhelpers.MustGodoClient(ctx, t.Name())
 	require.NoError(t, err)
 
@@ -478,8 +476,7 @@ func WaitForActionComplete(t *testing.T, dropletID int, actionID int, timeout ti
 func WaitForImageActionComplete(t *testing.T, imageID int, actionID int, timeout time.Duration) godo.Action {
 	t.Helper()
 
-	ctx, _ := getTestClient(t)
-
+	ctx := context.Background()
 	gclient, err := testhelpers.MustGodoClient(ctx, t.Name())
 	require.NoError(t, err)
 
@@ -497,7 +494,7 @@ func WaitForImageActionComplete(t *testing.T, imageID int, actionID int, timeout
 func WaitForDropletCondition(t *testing.T, dropletID int, condition func(*godo.Droplet) bool, interval, timeout time.Duration) (*godo.Droplet, error) {
 	t.Helper()
 
-	ctx, _ := getTestClient(t)
+	ctx := context.Background()
 	gclient, err := testhelpers.MustGodoClient(ctx, t.Name())
 	require.NoError(t, err)
 
@@ -507,7 +504,7 @@ func WaitForDropletCondition(t *testing.T, dropletID int, condition func(*godo.D
 func WaitForImageCondition(t *testing.T, imageID int, condition func(*godo.Image) bool, interval, timeout time.Duration) (*godo.Image, error) {
 	t.Helper()
 
-	ctx, _ := getTestClient(t)
+	ctx := context.Background()
 	gclient, err := testhelpers.MustGodoClient(ctx, t.Name())
 	require.NoError(t, err)
 
@@ -517,7 +514,7 @@ func WaitForImageCondition(t *testing.T, imageID int, condition func(*godo.Image
 func WaitForDropletDeletion(t *testing.T, dropletID int, interval, timeout time.Duration) error {
 	t.Helper()
 
-	ctx, _ := getTestClient(t)
+	ctx := context.Background()
 	gclient, err := testhelpers.MustGodoClient(ctx, t.Name())
 	require.NoError(t, err)
 
@@ -527,7 +524,7 @@ func WaitForDropletDeletion(t *testing.T, dropletID int, interval, timeout time.
 func WaitForImageDeletion(t *testing.T, imageID int, interval, timeout time.Duration) error {
 	t.Helper()
 
-	ctx, _ := getTestClient(t)
+	ctx := context.Background()
 	gclient, err := testhelpers.MustGodoClient(ctx, t.Name())
 	require.NoError(t, err)
 
