@@ -368,8 +368,8 @@ func dbaasAssertClusterExists(ctx context.Context, t *testing.T, c *client.Clien
 		Params: mcp.CallToolParams{
 			Name: "db-cluster-list",
 			Arguments: map[string]interface{}{
-				"page":     1,
-				"per_page": 50,
+				"page":     defaultPage,
+				"per_page": defaultPerPage,
 			},
 		},
 	})
@@ -409,7 +409,7 @@ func getTestImage(t *testing.T) (float64, string) {
 	images := callTool[[]map[string]any](t, "image-list", map[string]any{"Type": "distribution"})
 
 	for _, img := range images {
-		if slug, ok := img["slug"].(string); ok && slug == "ubuntu-22-04-x64" {
+		if slug, ok := img["slug"].(string); ok && slug == defaultTestImageSlug {
 			return img["id"].(float64), slug
 		}
 	}
@@ -426,7 +426,7 @@ func selectRegion(t *testing.T) string {
 		return rg
 	}
 
-	regions := callTool[[]map[string]any](t, "region-list", map[string]any{"Page": 1, "PerPage": 100})
+	regions := callTool[[]map[string]any](t, "region-list", map[string]any{"Page": defaultPage, "PerPage": defaultPerPage})
 
 	for _, r := range regions {
 		slug, _ := r["slug"].(string)
